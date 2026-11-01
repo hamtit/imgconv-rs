@@ -54,6 +54,19 @@ fn emscripten_clang_args() -> Vec<String> {
     args
 }
 
+/// TEMPORARY: report what emcc itself makes of the header, as cargo warnings.
+fn diagnose_emscripten(header: &str, include: &std::path::Path) {
+    let dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let file = dir.join("diag.h");
+    std::fs::write(&file, header).unwrap();
+    println!("cargo:warning=diag include={} args={:?}", include.display(), emscripten_clang_args());
+    println!("cargo:warning=diag bindgen clang {}", bindgen::clang_version().full);
+    let out = Command::new("emcc").arg("-fsyntax-only").arg(format!("-I{}", include.display())).arg(&file).output().unwrap();
+    for l in String::from_utf8_lossy(&out.stderr).lines().take(40) {
+        println!("cargo:warning=diag emcc: {l}");
+    }
+}
+
 /// Point a CMake build at the Emscripten toolchain (what `emcmake` does).
 fn use_emscripten(cfg: &mut cmake::Config) {
     let root = emscripten_root();
@@ -83,6 +96,7 @@ fn bindings(header: &str, include: &std::path::Path, prefix: &str, out: &str) {
     let mut builder = bindgen::Builder::default();
     if emscripten() {
         builder = builder.clang_args(emscripten_clang_args());
+        diagnose_emscripten(header, include);
     }
     builder
         .header_contents("wrap.h", header)
@@ -177,6 +191,7 @@ fn build_aom() {
     let mut builder = bindgen::Builder::default();
     if emscripten() {
         builder = builder.clang_args(emscripten_clang_args());
+        diagnose_emscripten("#include <aom/aom_encoder.h>\n#include <aom/aomcx.h>\n#include <aom/aom_decoder.h>\n#include <aom/aomdx.h>\n", &include);
     }
     let bindings = builder
         .header_contents(
