@@ -23,6 +23,15 @@ jobs:
             triple: linux-arm64-gnu
     runs-on: ${{ matrix.runner }}
     container: debian:bookworm
+    env:
+      # sccache wraps rustc and the C/C++ compilers CMake invokes for
+      # libaom / libjxl (CMake reads CMAKE_<LANG>_COMPILER_LAUNCHER from
+      # the environment), so both the test build and the addon build, and
+      # later runs, reuse the same object files.
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
       - name: Install build tools
         run: |
@@ -32,6 +41,7 @@ jobs:
           curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v4
+      - uses: mozilla-actions/sccache-action@v0.0.9
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.4
@@ -43,6 +53,8 @@ jobs:
             ~/.cargo/registry
             target
           key: ${{ matrix.triple }}-${{ hashFiles('Cargo.lock', 'vendor/*/.version', 'build.rs') }}
+          restore-keys: |
+            ${{ matrix.triple }}-
       - name: Rust unit tests
         run: cargo test --release --no-default-features
       - name: Build addon
@@ -51,6 +63,9 @@ jobs:
         run: |
           bun install --frozen-lockfile
           bun test test/
+      - name: sccache stats
+        if: always()
+        run: sccache --show-stats
       - uses: actions/upload-artifact@v4
         with:
           name: addon-${{ matrix.triple }}
