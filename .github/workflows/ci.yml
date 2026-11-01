@@ -149,6 +149,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
       CMAKE_C_COMPILER_LAUNCHER: sccache
       CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
