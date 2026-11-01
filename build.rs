@@ -61,9 +61,28 @@ fn diagnose_emscripten(header: &str, include: &std::path::Path) {
     std::fs::write(&file, header).unwrap();
     println!("cargo:warning=diag include={} args={:?}", include.display(), emscripten_clang_args());
     println!("cargo:warning=diag bindgen clang {}", bindgen::clang_version().full);
-    let out = Command::new("emcc").arg("-fsyntax-only").arg(format!("-I{}", include.display())).arg(&file).output().unwrap();
-    for l in String::from_utf8_lossy(&out.stderr).lines().take(40) {
-        println!("cargo:warning=diag emcc: {l}");
+    // The same libclang family bindgen uses, with and without emcc's own
+    // (newer) clang resource directory.
+    for (label, skip_resource) in [("with-resource", false), ("without-resource", true)] {
+        let mut cmd = Command::new("clang");
+        let args = emscripten_clang_args();
+        let mut it = args.iter().peekable();
+        while let Some(a) = it.next() {
+            if a == "-isystem" {
+                let p = it.next().unwrap();
+                if skip_resource && p.contains("lib/clang") {
+                    continue;
+                }
+                cmd.arg("-isystem").arg(p);
+            } else {
+                cmd.arg(a);
+            }
+        }
+        let out = cmd.arg("-fsyntax-only").arg(format!("-I{}", include.display())).arg(&file).output().unwrap();
+        println!("cargo:warning=diag {label}: status {}", out.status);
+        for l in String::from_utf8_lossy(&out.stderr).lines().filter(|l| l.contains("error")).take(15) {
+            println!("cargo:warning=diag {label}: {l}");
+        }
     }
 }
 
