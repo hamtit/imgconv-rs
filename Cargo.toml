@@ -40,3 +40,11 @@ lto = "fat"
 codegen-units = 1
 opt-level = 3
 strip = "symbols"
+
+# Used by CI for `cargo test`: same optimisation level as release (so the
+# codecs run at full speed) but without fat LTO / single codegen unit, which
+# only matter for the shipped addon.
+[profile.ci-test]
+inherits = "release"
+lto = "off"
+codegen-units = 16
