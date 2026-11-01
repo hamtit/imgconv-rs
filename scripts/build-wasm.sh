@@ -17,7 +17,8 @@ mkdir -p "$out/dist"
 
 # Rust wraps the whole crate (and the C libraries build.rs compiled) into one
 # static library; em++ does the final link. libjpeg (mozjpeg-sys) reports
-# errors by unwinding, so panic=unwind stays on.
+# errors by unwinding, so panic=unwind stays on; rustc compiles that with
+# WebAssembly exceptions, hence -fwasm-exceptions at link time.
 cargo rustc --release --locked --target wasm32-unknown-emscripten \
   --no-default-features --lib --crate-type staticlib
 lib="target/wasm32-unknown-emscripten/release/libimgconv_rs.a"
@@ -33,7 +34,7 @@ em++ -O3 \
   -sINITIAL_MEMORY=64MB \
   -sMAXIMUM_MEMORY=4GB \
   -sSTACK_SIZE=5MB \
-  -sDISABLE_EXCEPTION_CATCHING=0 \
+  -fwasm-exceptions \
   -sEXPORTED_FUNCTIONS="$(echo "$funcs" | tr ',' '\n' | sed 's/^/_/' | paste -sd, -)" \
   -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,UTF8ToString \
   "$lib" \
