@@ -14,7 +14,7 @@ fn emscripten() -> bool {
     env::var("TARGET").is_ok_and(|t| t.contains("emscripten"))
 }
 
-/// Emscripten's own directory (holds the CMake toolchain file and the sysroot).
+/// Emscripten's own directory (holds the CMake toolchain file).
 fn emscripten_root() -> PathBuf {
     println!("cargo:rerun-if-env-changed=EMSCRIPTEN_ROOT");
     if let Some(root) = env::var_os("EMSCRIPTEN_ROOT") {
@@ -26,6 +26,32 @@ fn emscripten_root() -> PathBuf {
         .expect("em-config not found: activate the Emscripten SDK or set EMSCRIPTEN_ROOT");
     assert!(out.status.success(), "em-config EMSCRIPTEN_ROOT failed");
     PathBuf::from(String::from_utf8(out.stdout).unwrap().trim())
+}
+
+/// clang arguments for bindgen: wasm32 type sizes and the include directories
+/// emcc itself searches (its libc headers are not in a plain --sysroot, so
+/// ask the compiler instead of guessing the layout).
+fn emscripten_clang_args() -> Vec<String> {
+    let out = Command::new("emcc")
+        .args(["-E", "-x", "c", "-v", "-"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("emcc not found: activate the Emscripten SDK");
+    let log = String::from_utf8_lossy(&out.stderr);
+    let mut args = vec!["--target=wasm32-unknown-emscripten".to_string()];
+    let mut in_list = false;
+    for line in log.lines() {
+        if line.starts_with("#include <...> search starts here") {
+            in_list = true;
+        } else if line.starts_with("End of search list") {
+            break;
+        } else if in_list {
+            args.push("-isystem".to_string());
+            args.push(line.trim().to_string());
+        }
+    }
+    assert!(args.len() > 1, "could not read emcc's include paths:\n{log}");
+    args
 }
 
 /// Point a CMake build at the Emscripten toolchain (what `emcmake` does).
@@ -56,10 +82,7 @@ fn vendor_dir(name: &str, env_var: &str) -> PathBuf {
 fn bindings(header: &str, include: &std::path::Path, prefix: &str, out: &str) {
     let mut builder = bindgen::Builder::default();
     if emscripten() {
-        // The headers must be parsed with wasm32 type sizes.
-        builder = builder
-            .clang_arg("--target=wasm32-unknown-emscripten")
-            .clang_arg(format!("--sysroot={}", emscripten_root().join("cache/sysroot").display()));
+        builder = builder.clang_args(emscripten_clang_args());
     }
     builder
         .header_contents("wrap.h", header)
@@ -153,9 +176,7 @@ fn build_aom() {
     let include = out.join("include");
     let mut builder = bindgen::Builder::default();
     if emscripten() {
-        builder = builder
-            .clang_arg("--target=wasm32-unknown-emscripten")
-            .clang_arg(format!("--sysroot={}", emscripten_root().join("cache/sysroot").display()));
+        builder = builder.clang_args(emscripten_clang_args());
     }
     let bindings = builder
         .header_contents(
