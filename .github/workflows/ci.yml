@@ -122,7 +122,7 @@ jobs:
           path: |
             ~/.cargo/registry
             target
-          key: ${{ matrix.triple }}-${{ hashFiles('Cargo.lock', 'vendor/*/.version', 'build.rs') }}
+          key: ${{ matrix.triple }}-dev1-${{ hashFiles('Cargo.lock', 'vendor/*/.version', 'build.rs') }}
           restore-keys: |
             ${{ matrix.triple }}-
       # Dev profile on purpose: the release profile uses fat LTO with one
