@@ -25,7 +25,8 @@ export default async function createImgconv(moduleOptions) {
 
   // Run `fn(ptr)` with a copy of `bytes` in the wasm heap.
   function withBytes(bytes, fn) {
-    const ptr = m._malloc(Math.max(bytes.length, 1));
+    // Pointers above 2 GiB come back as negative i32s; index with the unsigned value.
+    const ptr = m._malloc(Math.max(bytes.length, 1)) >>> 0;
     if (!ptr) throw new Error('imgconv-rs: out of memory');
     try {
       m.HEAPU8.set(bytes, ptr);
@@ -93,7 +94,7 @@ export default async function createImgconv(moduleOptions) {
     /** Read format, size and frame count from the header without decoding pixels. */
     probe(input) {
       const bytes = toBytes(input, 'input');
-      const out = m._malloc(5 * 4);
+      const out = m._malloc(5 * 4) >>> 0;
       try {
         const rc = withBytes(bytes, (p) => m._imgconv_probe(p, bytes.length, out));
         if (rc !== 0) throw new Error(lastError());
