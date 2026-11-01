@@ -117,31 +117,16 @@ jobs:
           bun-version: 1.4.4
       - name: Fetch codec sources
         run: ./scripts/fetch-deps.sh
-      # vendor/ is cached together with target/ on purpose: the cmake trees
-      # for libaom / libjxl live in target/, and a freshly downloaded vendor/
-      # has newer mtimes than their objects, so make would rebuild all of
-      # it (twice per job: tests and addon use separate build script runs).
-      # tar keeps mtimes, so a restored vendor/ keeps the cmake build a no-op.
       - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             target
-            vendor
-          key: ${{ matrix.triple }}-dev2-${{ hashFiles('Cargo.lock', 'vendor/*/.version', 'build.rs') }}
+          key: ${{ matrix.triple }}-${{ hashFiles('Cargo.lock', 'vendor/*/.version', 'build.rs') }}
           restore-keys: |
             ${{ matrix.triple }}-
-      # A fallback (restore-keys) restore can bring back an older vendor/ over
-      # the sources fetched above; fetch-deps.sh replaces any whose pinned
-      # version differs and is a no-op otherwise.
-      - name: Re-check codec sources after cache restore
-        run: ./scripts/fetch-deps.sh
-      # Dev profile on purpose: the release profile uses fat LTO with one
-      # codegen unit, which made compiling the crate for the tests take
-      # ~1m40s while running them takes well under a second. The C/C++
-      # codecs are always built as Release by build.rs either way.
       - name: Rust unit tests
-        run: cargo test --no-default-features
+        run: cargo test --release --no-default-features
       - name: Build addon
         run: ./scripts/build.sh
       - name: Addon tests
