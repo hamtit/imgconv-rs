@@ -129,6 +129,19 @@ fn bindings(header: &str, include: &std::path::Path, prefix: &str, out: &str) {
         .unwrap_or_else(|e| panic!("generate {out}: {e}"))
         .write_to_file(PathBuf::from(env::var("OUT_DIR").unwrap()).join(out))
         .unwrap();
+    if emscripten() {
+        report_bindings(out);
+    }
+}
+
+/// TEMPORARY: summarize a generated bindings file as cargo warnings.
+fn report_bindings(out: &str) {
+    let text = std::fs::read_to_string(PathBuf::from(env::var("OUT_DIR").unwrap()).join(out)).unwrap();
+    let fns = text.matches("pub fn ").count();
+    println!("cargo:warning=diag {out}: {} bytes, {fns} functions", text.len());
+    for l in text.lines().filter(|l| l.contains("extern") || l.contains("aom_codec_version_str") || l.contains("JxlEncoderCreate")).take(8) {
+        println!("cargo:warning=diag {out}: {l}");
+    }
 }
 
 fn build_jxl() {
@@ -158,15 +171,26 @@ fn build_jxl() {
     }
     let out = cfg.build();
     println!("cargo:rustc-link-search=native={}", out.join("lib").display());
-    for lib in ["jxl", "jxl_cms", "jxl_threads", "hwy", "brotlienc", "brotlidec", "brotlicommon"] {
+    // libjxl_threads is not built for wasm (no threads).
+    let libs: &[&str] = if emscripten() {
+        &["jxl", "jxl_cms", "hwy", "brotlienc", "brotlidec", "brotlicommon"]
+    } else {
+        &["jxl", "jxl_cms", "jxl_threads", "hwy", "brotlienc", "brotlidec", "brotlicommon"]
+    };
+    for lib in libs {
         println!("cargo:rustc-link-lib=static={lib}");
     }
     // The wasm build is linked by em++, which brings its own libc++.
     if !emscripten() {
         println!("cargo:rustc-link-lib=stdc++");
     }
+    let header = if emscripten() {
+        "#include <jxl/encode.h>\n#include <jxl/decode.h>\n"
+    } else {
+        "#include <jxl/encode.h>\n#include <jxl/decode.h>\n#include <jxl/thread_parallel_runner.h>\n"
+    };
     bindings(
-        "#include <jxl/encode.h>\n#include <jxl/decode.h>\n#include <jxl/thread_parallel_runner.h>\n",
+        header,
         &out.join("include"),
         "Jxl",
         "jxl_bindings.rs",
@@ -228,4 +252,7 @@ fn build_aom() {
     bindings
         .write_to_file(PathBuf::from(env::var("OUT_DIR").unwrap()).join("aom_bindings.rs"))
         .unwrap();
+    if emscripten() {
+        report_bindings("aom_bindings.rs");
+    }
 }
