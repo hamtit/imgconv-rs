@@ -125,8 +125,12 @@ jobs:
           key: ${{ matrix.triple }}-${{ hashFiles('Cargo.lock', 'vendor/*/.version', 'build.rs') }}
           restore-keys: |
             ${{ matrix.triple }}-
+      # Dev profile on purpose: the release profile uses fat LTO with one
+      # codegen unit, which made compiling the crate for the tests take
+      # ~1m40s while running them takes well under a second. The C/C++
+      # codecs are always built as Release by build.rs either way.
       - name: Rust unit tests
-        run: cargo test --release --no-default-features
+        run: cargo test --no-default-features
       - name: Build addon
         run: ./scripts/build.sh
       - name: Addon tests
