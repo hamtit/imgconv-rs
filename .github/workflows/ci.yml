@@ -56,7 +56,8 @@ jobs:
           restore-keys: |
             ${{ matrix.triple }}-
       - name: Rust unit tests
-        run: cargo test --release --no-default-features
+        # ci-test = release without fat LTO (see Cargo.toml).
+        run: cargo test --profile ci-test --no-default-features
       - name: Build addon
         run: ./scripts/build.sh
       - name: Addon tests
