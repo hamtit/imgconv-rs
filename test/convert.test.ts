@@ -2,7 +2,11 @@
 // fixtures and decodes WebP/AVIF outputs.
 import { describe, expect, test } from 'bun:test';
 import sharp from 'sharp';
+import { readFileSync } from 'node:fs';
 import { convert, convertRgba, probe, versions } from '..';
+
+// Cargo.toml is the one place the version is written.
+const cargoVersion = readFileSync(new URL('../Cargo.toml', import.meta.url), 'utf8').match(/^version\s*=\s*"([^"]+)"/m)![1];
 
 async function photo(width: number, height: number) {
   // A smooth gradient with a sharp edge: compresses like a photo, easy to check.
@@ -20,7 +24,7 @@ async function pixel(buf: Buffer, x: number, y: number) {
 
 describe('versions', () => {
   test('reports the bundled codec versions', () => {
-    expect(versions()).toEqual({ imgconvRs: '0.1.0', libwebp: '1.6.0', libaom: 'v3.15.1', libjxl: '0.12.0' });
+    expect(versions()).toEqual({ imgconvRs: cargoVersion, libwebp: '1.6.0', libaom: 'v3.15.1', libjxl: '0.12.0' });
   });
 });
 

@@ -1,9 +1,38 @@
 //! Builds the pinned libaom and libjxl (see scripts/fetch-deps.sh) as static
 //! libraries, generates Rust bindings from their headers, and runs the
 //! napi-rs setup.
+//!
+//! For wasm32-unknown-emscripten (scripts/build-wasm.sh) the same sources are
+//! built through Emscripten's CMake toolchain without SIMD, assembly or
+//! threads; the Emscripten SDK must be on PATH (or EMSCRIPTEN_ROOT set).
 
 use std::env;
 use std::path::PathBuf;
+use std::process::Command;
+
+fn emscripten() -> bool {
+    env::var("TARGET").is_ok_and(|t| t.contains("emscripten"))
+}
+
+/// Emscripten's own directory (holds the CMake toolchain file and the sysroot).
+fn emscripten_root() -> PathBuf {
+    println!("cargo:rerun-if-env-changed=EMSCRIPTEN_ROOT");
+    if let Some(root) = env::var_os("EMSCRIPTEN_ROOT") {
+        return PathBuf::from(root);
+    }
+    let out = Command::new("em-config")
+        .arg("EMSCRIPTEN_ROOT")
+        .output()
+        .expect("em-config not found: activate the Emscripten SDK or set EMSCRIPTEN_ROOT");
+    assert!(out.status.success(), "em-config EMSCRIPTEN_ROOT failed");
+    PathBuf::from(String::from_utf8(out.stdout).unwrap().trim())
+}
+
+/// Point a CMake build at the Emscripten toolchain (what `emcmake` does).
+fn use_emscripten(cfg: &mut cmake::Config) {
+    let root = emscripten_root();
+    cfg.define("CMAKE_TOOLCHAIN_FILE", root.join("cmake/Modules/Platform/Emscripten.cmake"));
+}
 
 fn main() {
     if env::var_os("CARGO_FEATURE_NAPI").is_some() {
@@ -25,7 +54,14 @@ fn vendor_dir(name: &str, env_var: &str) -> PathBuf {
 }
 
 fn bindings(header: &str, include: &std::path::Path, prefix: &str, out: &str) {
-    bindgen::Builder::default()
+    let mut builder = bindgen::Builder::default();
+    if emscripten() {
+        // The headers must be parsed with wasm32 type sizes.
+        builder = builder
+            .clang_arg("--target=wasm32-unknown-emscripten")
+            .clang_arg(format!("--sysroot={}", emscripten_root().join("cache/sysroot").display()));
+    }
+    builder
         .header_contents("wrap.h", header)
         .clang_arg(format!("-I{}", include.display()))
         .allowlist_function(format!("{prefix}.*"))
@@ -41,8 +77,8 @@ fn bindings(header: &str, include: &std::path::Path, prefix: &str, out: &str) {
 
 fn build_jxl() {
     let src = vendor_dir("libjxl", "IMGCONV_JXL_SOURCE_DIR");
-    let out = cmake::Config::new(&src)
-        .profile("Release")
+    let mut cfg = cmake::Config::new(&src);
+    cfg.profile("Release")
         .define("BUILD_TESTING", "OFF")
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("JPEGXL_ENABLE_TOOLS", "OFF")
@@ -59,13 +95,20 @@ fn build_jxl() {
         .define("JPEGXL_FORCE_SYSTEM_BROTLI", "OFF")
         .define("JPEGXL_FORCE_SYSTEM_HWY", "OFF")
         .define("CMAKE_POSITION_INDEPENDENT_CODE", "ON")
-        .define("CMAKE_INSTALL_LIBDIR", "lib")
-        .build();
+        .define("CMAKE_INSTALL_LIBDIR", "lib");
+    if emscripten() {
+        use_emscripten(&mut cfg);
+        cfg.define("JPEGXL_ENABLE_WASM_THREADS", "OFF");
+    }
+    let out = cfg.build();
     println!("cargo:rustc-link-search=native={}", out.join("lib").display());
     for lib in ["jxl", "jxl_cms", "jxl_threads", "hwy", "brotlienc", "brotlidec", "brotlicommon"] {
         println!("cargo:rustc-link-lib=static={lib}");
     }
-    println!("cargo:rustc-link-lib=stdc++");
+    // The wasm build is linked by em++, which brings its own libc++.
+    if !emscripten() {
+        println!("cargo:rustc-link-lib=stdc++");
+    }
     bindings(
         "#include <jxl/encode.h>\n#include <jxl/decode.h>\n#include <jxl/thread_parallel_runner.h>\n",
         &out.join("include"),
@@ -91,7 +134,14 @@ fn build_aom() {
         .define("CONFIG_PIC", "1")
         .define("CMAKE_POSITION_INDEPENDENT_CODE", "ON")
         .define("CMAKE_INSTALL_LIBDIR", "lib");
-    if target.starts_with("aarch64") && env::var("HOST").unwrap() != target {
+    if emscripten() {
+        use_emscripten(&mut cfg);
+        cfg.define("AOM_TARGET_CPU", "generic")
+            .define("ENABLE_NASM", "0")
+            .define("CONFIG_RUNTIME_CPU_DETECT", "0")
+            .define("CONFIG_MULTITHREAD", "0")
+            .define("CONFIG_WEBM_IO", "0");
+    } else if target.starts_with("aarch64") && env::var("HOST").unwrap() != target {
         cfg.define("CMAKE_SYSTEM_PROCESSOR", "aarch64")
             .define("CMAKE_SYSTEM_NAME", "Linux");
     }
@@ -101,7 +151,13 @@ fn build_aom() {
     println!("cargo:rustc-link-lib=static=aom");
 
     let include = out.join("include");
-    let bindings = bindgen::Builder::default()
+    let mut builder = bindgen::Builder::default();
+    if emscripten() {
+        builder = builder
+            .clang_arg("--target=wasm32-unknown-emscripten")
+            .clang_arg(format!("--sysroot={}", emscripten_root().join("cache/sysroot").display()));
+    }
+    let bindings = builder
         .header_contents(
             "aom_wrap.h",
             "#include <aom/aom_encoder.h>\n#include <aom/aomcx.h>\n#include <aom/aom_decoder.h>\n#include <aom/aomdx.h>\n",

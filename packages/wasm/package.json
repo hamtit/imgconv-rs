@@ -1,0 +1,23 @@
+{
+  "name": "imgconv-rs-wasm",
+  "version": "0.0.0-dev",
+  "private": true,
+  "description": "Image conversion (WebP / AVIF / JPEG XL) compiled to WebAssembly",
+  "license": "MIT AND BSD-2-Clause AND BSD-3-Clause AND IJG AND Zlib AND (Apache-2.0 OR MIT) AND (MIT OR NCSA) AND Apache-2.0 WITH LLVM-exception",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hamtit/imgconv-rs.git"
+  },
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./dist/*": "./dist/*",
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false
+}
