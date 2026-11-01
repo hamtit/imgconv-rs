@@ -174,9 +174,9 @@ jobs:
           path: |
             ~/.cargo/registry
             target
-          key: wasm-${{ hashFiles('Cargo.lock', 'build.rs', 'scripts/build-wasm.sh') }}
+          key: wasm2-${{ hashFiles('Cargo.lock', 'build.rs', 'scripts/build-wasm.sh') }}
           restore-keys: |
-            wasm-
+            wasm2-
       - name: Build
         run: |
           source work/emsdk/emsdk_env.sh

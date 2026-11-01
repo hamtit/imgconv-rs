@@ -12,6 +12,11 @@ out="$(realpath -m "${1:?out dir}")"
 cd "$here"
 
 ./scripts/fetch-deps.sh
+# One exception / setjmp model everywhere: rustc uses WebAssembly exceptions,
+# so the C and C++ code (libaom's longjmp, mozjpeg, libwebp, libjxl) is
+# compiled for it too. The cc crate and cmake-rs pick these variables up.
+export CFLAGS_wasm32_unknown_emscripten="-fwasm-exceptions"
+export CXXFLAGS_wasm32_unknown_emscripten="-fwasm-exceptions"
 rm -rf "$out"
 mkdir -p "$out/dist"
 
