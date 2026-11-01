@@ -62,7 +62,7 @@ fn output_code(f: OutputFormat) -> u32 {
     }
 }
 
-fn options(format: u32, quality: f32, max_dimension: u32, effort: u32, max_pixels: f64, animated: u32) -> Option<Options> {
+fn options(format: u32, quality: f32, max_dimension: u32, effort: i32, max_pixels: f64, animated: u32) -> Option<Options> {
     let format = match format {
         0 => OutputFormat::Webp,
         1 => OutputFormat::Avif,
@@ -78,7 +78,8 @@ fn options(format: u32, quality: f32, max_dimension: u32, effort: u32, max_pixel
     }
     let mut o = Options::new(format, quality);
     o.max_dimension = (max_dimension > 0).then_some(max_dimension);
-    o.effort = (effort > 0).then_some(effort);
+    // Negative means "default"; 0 is a real (fastest) setting.
+    o.effort = u32::try_from(effort).ok();
     o.max_pixels = if max_pixels > 0.0 { max_pixels as u64 } else { DEFAULT_MAX_PIXELS };
     o.animated = animated != 0;
     // There are no threads in this build.
@@ -115,8 +116,8 @@ fn finish(r: crate::Result<convert::Output>) -> *mut WasmResult {
 
 /// Convert an encoded image. Returns null on failure (see `imgconv_last_error`).
 ///
-/// `format`: 0 webp, 1 avif, 2 jxl. `effort` and `max_dimension` of 0 mean
-/// the default / no limit; `max_pixels` of 0 means the default limit.
+/// `format`: 0 webp, 1 avif, 2 jxl. `max_dimension` of 0 means no limit and a negative
+/// `effort` the default; `max_pixels` of 0 means the default limit.
 ///
 /// # Safety
 /// `data` must point to `len` readable bytes.
@@ -127,7 +128,7 @@ pub unsafe extern "C" fn imgconv_convert(
     format: u32,
     quality: f32,
     max_dimension: u32,
-    effort: u32,
+    effort: i32,
     max_pixels: f64,
     animated: u32,
 ) -> *mut WasmResult {
@@ -151,7 +152,7 @@ pub unsafe extern "C" fn imgconv_convert_rgba(
     format: u32,
     quality: f32,
     max_dimension: u32,
-    effort: u32,
+    effort: i32,
     max_pixels: f64,
     animated: u32,
 ) -> *mut WasmResult {

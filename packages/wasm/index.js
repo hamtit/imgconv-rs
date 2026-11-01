@@ -70,7 +70,7 @@ export default async function createImgconv(moduleOptions) {
   const common = (o) => [
     o.quality ?? 65,
     o.maxDimension ?? 0,
-    o.effort ?? 0,
+    o.effort ?? -1,
     o.maxPixels ?? 0,
     o.animated === false ? 0 : 1,
   ];
