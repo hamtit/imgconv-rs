@@ -1,6 +1,7 @@
 //! JPEG XL encoding with libjxl 0.12.0: effort 7, whole-image buffering,
 //! distance from the 0-100 quality (lossless at 100), sRGB.
 
+#[cfg(not(target_os = "emscripten"))]
 use std::ffi::c_void;
 use std::mem::MaybeUninit;
 use std::ptr;
@@ -20,7 +21,10 @@ impl Drop for Encoder {
         unsafe { JxlEncoderDestroy(self.0) }
     }
 }
+// The wasm build has no threads (libjxl_threads is not built there).
+#[cfg(not(target_os = "emscripten"))]
 struct Runner(*mut c_void);
+#[cfg(not(target_os = "emscripten"))]
 impl Drop for Runner {
     fn drop(&mut self) {
         unsafe { JxlThreadParallelRunnerDestroy(self.0) }
@@ -42,6 +46,7 @@ pub fn encode(img: &Image, quality: f32, effort: u32, threads: u32) -> Result<Ve
         if enc.0.is_null() {
             bail!("JxlEncoderCreate failed");
         }
+        #[cfg(not(target_os = "emscripten"))]
         let _runner = if threads > 1 {
             let r = Runner(JxlThreadParallelRunnerCreate(ptr::null(), threads as usize));
             check(JxlEncoderSetParallelRunner(enc.0, Some(JxlThreadParallelRunner), r.0), "JxlEncoderSetParallelRunner")?;
@@ -49,6 +54,8 @@ pub fn encode(img: &Image, quality: f32, effort: u32, threads: u32) -> Result<Ve
         } else {
             None
         };
+        #[cfg(target_os = "emscripten")]
+        let _ = threads;
 
         let mut info = MaybeUninit::<JxlBasicInfo>::zeroed();
         JxlEncoderInitBasicInfo(info.as_mut_ptr());

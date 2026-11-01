@@ -64,7 +64,31 @@ bun test test/
 cargo test --release --no-default-features
 ```
 
-`v*` タグを push すると、CI が Debian bookworm (`oven/bun:*-debian` と同じ glibc) で x64 / arm64 をビルドし、両方の `.node` と依存ライブラリのライセンス文書 (`licenses/`) を入れた npm tarball を GitHub Release に添付する。利用側は Release の tarball の URL で依存できる。
+## リリース
+
+リリースは自動で、バージョン番号の置き場所は `Cargo.toml` の `version` だけ (`package.json` には書かない。`Cargo.lock` の `imgconv-rs` の版は `cargo update -p imgconv-rs` で揃える。CI が食い違いを検出する)。
+
+1. PR で `Cargo.toml` (と `Cargo.lock`) の `version` を上げる。
+2. `main` にマージする。CI が通ったあと、タグ `v<version>` がまだなければ、タグと GitHub Release を作る。
+
+`main` への push でもタグがすでにあれば、ビルドとテストだけを行う。`v<version>` のタグを手で push してもリリースされる (`Cargo.toml` と合わない名前のタグは拒否)。PR と手動実行では、ビルド・テスト・パッケージ作成までを行い、パッケージはワークフローのアーティファクトに残る。
+
+Release には 4 つの npm tarball が付く。npm レジストリには公開していないので、Release の URL で依存する。
+
+| ファイル | 内容 |
+|---|---|
+| `imgconv-rs-linux-x64-<version>.tgz` | Linux x64 (glibc) のアドオンだけ |
+| `imgconv-rs-linux-arm64-<version>.tgz` | Linux arm64 (glibc) のアドオンだけ |
+| `imgconv-rs-<version>.tgz` | x64 と arm64 を 1 つにまとめたもの |
+| `imgconv-rs-wasm-<version>.tgz` | WebAssembly 版 ([packages/wasm](packages/wasm/README.md)) |
+
+x64 / arm64 の単体パッケージは `os` / `cpu` を持つので、`optionalDependencies` に両方並べればパッケージマネージャーが合う方だけ入れる。どれも Debian bookworm (`oven/bun:*-debian` と同じ glibc) でビルドし、依存ライブラリのライセンス文書 (`licenses/`) を含む。
+
+```sh
+npm install https://github.com/hamtit/imgconv-rs/releases/download/v0.1.0/imgconv-rs-0.1.0.tgz
+```
+
+WebAssembly 版は Emscripten で `wasm32-unknown-emscripten` 向けにビルドする (`scripts/build-wasm.sh`)。SIMD とスレッドは使わず、同期 API で、`threads` オプションはない。ブラウザーでは Worker で動かす。
 
 ## ベンチマーク
 

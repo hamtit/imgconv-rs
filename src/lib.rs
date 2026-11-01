@@ -16,6 +16,9 @@ pub mod resize;
 #[cfg(feature = "napi")]
 mod node;
 
+#[cfg(target_os = "emscripten")]
+pub mod wasm;
+
 pub use convert::{Options, Output, OutputFormat, convert, convert_rgba};
 pub use error::{Error, Result};
 pub use probe::{Format, Info, probe};
