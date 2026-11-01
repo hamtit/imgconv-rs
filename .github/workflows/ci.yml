@@ -131,6 +131,11 @@ jobs:
           key: ${{ matrix.triple }}-dev2-${{ hashFiles('Cargo.lock', 'vendor/*/.version', 'build.rs') }}
           restore-keys: |
             ${{ matrix.triple }}-
+      # A fallback (restore-keys) restore can bring back an older vendor/ over
+      # the sources fetched above; fetch-deps.sh replaces any whose pinned
+      # version differs and is a no-op otherwise.
+      - name: Re-check codec sources after cache restore
+        run: ./scripts/fetch-deps.sh
       # Dev profile on purpose: the release profile uses fat LTO with one
       # codegen unit, which made compiling the crate for the tests take
       # ~1m40s while running them takes well under a second. The C/C++
