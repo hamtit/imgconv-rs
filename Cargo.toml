@@ -1,0 +1,42 @@
+[package]
+name = "imgconv-rs"
+version = "0.1.0"
+edition = "2024"
+description = "Image conversion: decode, orient, resize and encode to WebP / AVIF / JPEG XL in one native call"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["napi"]
+napi = ["dep:napi", "dep:napi-derive"]
+
+[dependencies]
+napi = { version = "3", default-features = false, features = ["napi6"], optional = true }
+napi-derive = { version = "3", optional = true }
+mozjpeg = "0.10"
+png = "0.18"
+gif = "0.14"
+libwebp-sys = "0.14"
+avif-serialize = "0.8"
+avif-parse = "2"
+fast_image_resize = "6"
+moxcms = "0.9"
+resvg = { version = "0.49", default-features = false, features = ["raster-images"] }
+libc = "0.2"
+
+[build-dependencies]
+napi-build = "2"
+cmake = "0.1"
+bindgen = "0.73"
+
+[dev-dependencies]
+ssimulacra2 = "0.5"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+strip = "symbols"

@@ -1,0 +1,31 @@
+{
+  "name": "imgconv-rs",
+  "version": "0.1.0",
+  "description": "Image conversion (WebP / AVIF / JPEG XL) as a Node-API addon written in Rust",
+  "license": "MIT",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node",
+    "licenses/",
+    "LICENSE"
+  ],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "scripts": {
+    "build": "./scripts/build.sh",
+    "test": "bun test test/"
+  },
+  "devDependencies": {
+    "sharp": "0.35.5",
+    "@types/bun": "^1.4.3"
+  },
+  "private": true
+}
