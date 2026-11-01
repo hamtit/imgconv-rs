@@ -117,12 +117,18 @@ jobs:
           bun-version: 1.4.4
       - name: Fetch codec sources
         run: ./scripts/fetch-deps.sh
+      # vendor/ is cached together with target/ on purpose: the cmake trees
+      # for libaom / libjxl live in target/, and a freshly downloaded vendor/
+      # has newer mtimes than their objects, so make would rebuild all of
+      # it (twice per job: tests and addon use separate build script runs).
+      # tar keeps mtimes, so a restored vendor/ keeps the cmake build a no-op.
       - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             target
-          key: ${{ matrix.triple }}-dev1-${{ hashFiles('Cargo.lock', 'vendor/*/.version', 'build.rs') }}
+            vendor
+          key: ${{ matrix.triple }}-dev2-${{ hashFiles('Cargo.lock', 'vendor/*/.version', 'build.rs') }}
           restore-keys: |
             ${{ matrix.triple }}-
       # Dev profile on purpose: the release profile uses fat LTO with one
