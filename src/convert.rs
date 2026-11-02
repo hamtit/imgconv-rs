@@ -95,7 +95,7 @@ fn prepare_still(buf: &[u8], info: &Info, max_dimension: Option<u32>) -> Result<
     let stored_target = target.map(|(w, h)| if info.orientation >= 5 { (h, w) } else { (w, h) });
     let shrink = |t: Option<(u32, u32)>| t.map_or(1, |t| shrink_on_load(info.width, info.height, t));
 
-    let Decoded { image, icc, orientation } = match info.format {
+    let Decoded { mut image, icc, orientation } = match info.format {
         Format::Jpeg => decode::jpeg::decode(buf, shrink(stored_target))?,
         Format::Webp => decode::webp::decode(buf, shrink(stored_target))?,
         Format::Png => decode::png::decode(buf)?,
@@ -104,6 +104,8 @@ fn prepare_still(buf: &[u8], info: &Info, max_dimension: Option<u32>) -> Result<
         // Rendered straight at the target size.
         Format::Svg => Decoded::plain(decode::svg::decode(buf, stored_target)?),
     };
+    // Before the resize, so opaque images are resized as RGB.
+    image.drop_opaque_alpha();
     let mut image = match stored_target {
         Some((w, h)) if (image.width, image.height) != (w, h) => resize::resize(&image, w, h)?,
         _ => image,
@@ -112,7 +114,6 @@ fn prepare_still(buf: &[u8], info: &Info, max_dimension: Option<u32>) -> Result<
     if let Some(icc) = icc {
         color::to_srgb(&mut image, &icc);
     }
-    image.drop_opaque_alpha();
     Ok(image)
 }
 
@@ -191,12 +192,12 @@ pub fn convert_rgba(rgba: &[u8], width: u32, height: u32, opts: &Options) -> Res
     }
     check_pixels(width, height, 1, opts.max_pixels)?;
     guard(|| {
-        let src = Image::new(width, height, 4, rgba.to_vec());
-        let mut image = match opts.max_dimension.and_then(|m| resize::fit_inside(width, height, m)) {
+        let mut src = Image::new(width, height, 4, rgba.to_vec());
+        src.drop_opaque_alpha();
+        let image = match opts.max_dimension.and_then(|m| resize::fit_inside(width, height, m)) {
             Some((w, h)) => resize::resize(&src, w, h)?,
             None => src,
         };
-        image.drop_opaque_alpha();
         let data = encode_still(&image, opts)?;
         let input = Info { format: Format::Png, width, height, frames: 1, orientation: 1, max_frame_pixels: u64::from(width) * u64::from(height) };
         Ok(Output { data, format: opts.format, width: image.width, height: image.height, frames: 1, input })
