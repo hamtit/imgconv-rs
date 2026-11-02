@@ -8,6 +8,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::convert::{self, DEFAULT_MAX_PIXELS, Options, OutputFormat};
 
+/// Tune the allocator as soon as the addon is loaded.
+#[napi_derive::module_init]
+fn init() {
+    crate::memory::init();
+}
+
 /// Conversions currently running on the thread pool.
 static ACTIVE: AtomicUsize = AtomicUsize::new(0);
 
