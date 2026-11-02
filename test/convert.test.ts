@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'bun:test';
 import sharp from 'sharp';
 import { readFileSync } from 'node:fs';
-import { convert, convertRgba, probe, setMemoryBudget, versions } from '..';
+import { convert, convertRgba, probe, versions } from '..';
 
 // Cargo.toml is the one place the version is written.
 const cargoVersion = readFileSync(new URL('../Cargo.toml', import.meta.url), 'utf8').match(/^version\s*=\s*"([^"]+)"/m)![1];
@@ -222,15 +222,11 @@ describe('row-streaming shrink', () => {
   });
 });
 
-describe('memory budget', () => {
-  test('conversions over the budget wait but all finish', async () => {
-    const input = await photo(1200, 800);
-    setMemoryBudget(1); // smaller than any conversion: they run one at a time
-    try {
-      const results = await Promise.all(Array.from({ length: 6 }, () => convert(input, { format: 'webp', maxDimension: 400 })));
-      expect(results.every((r) => r.width === 400)).toBe(true);
-    } finally {
-      setMemoryBudget(0);
-    }
+describe('alpha after shrinking', () => {
+  test('an image that becomes fully opaque when shrunk loses its alpha channel', async () => {
+    const rgba = Buffer.alloc(100 * 100 * 4, 255);
+    rgba[3] = 254; // one nearly opaque pixel
+    const out = await convertRgba(rgba, 100, 100, { format: 'webp', maxDimension: 20 });
+    expect((await sharp(out.data).metadata()).hasAlpha).toBe(false);
   });
 });

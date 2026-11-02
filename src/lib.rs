@@ -1,7 +1,6 @@
 //! Image conversion for web delivery. See README.md.
 
 pub mod aom;
-pub mod budget;
 pub mod color;
 pub mod convert;
 pub mod decode;

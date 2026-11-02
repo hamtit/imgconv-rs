@@ -48,13 +48,6 @@ export function convertRgba(
   options: ConvertOptions,
   signal?: AbortSignal,
 ): Promise<ConvertResult>;
-/**
- * Limit the estimated memory of conversions running at once, in megabytes
- * (0 = unlimited, the default; `IMGCONV_MEMORY_BUDGET_MB` sets the initial
- * value). A conversion over the limit waits on its worker thread; one that
- * alone exceeds it runs when nothing else is running.
- */
-export function setMemoryBudget(megabytes: number): void;
 /** Read format, size and frame count from the header without decoding pixels. */
 export function probe(input: Buffer | Uint8Array): ImageInfo;
 export function versions(): { imgconvRs: string; libwebp: string; libaom: string; libjxl: string };

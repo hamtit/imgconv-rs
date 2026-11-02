@@ -8,12 +8,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::convert::{self, DEFAULT_MAX_PIXELS, Options, OutputFormat};
 
-/// Tune the allocator as soon as the addon is loaded.
-#[napi_derive::module_init]
-fn init() {
-    crate::memory::init();
-}
-
 /// Conversions currently running on the thread pool.
 static ACTIVE: AtomicUsize = AtomicUsize::new(0);
 
@@ -151,14 +145,6 @@ pub fn convert_rgba(
 ) -> AsyncTask<ConvertTask> {
     let options = to_options(&options);
     AsyncTask::with_optional_signal(ConvertTask { input: Input::Rgba(rgba, width, height), options }, signal)
-}
-
-/// Limit the estimated working set of conversions running at once, in
-/// megabytes (0 = unlimited, the default). Conversions over the limit wait on
-/// the worker thread, so a few huge images cannot be decoded together.
-#[napi]
-pub fn set_memory_budget(megabytes: f64) {
-    crate::budget::set_budget((megabytes.max(0.0) * 1048576.0) as u64);
 }
 
 /// Read format, size and frame count from the header without decoding pixels.
