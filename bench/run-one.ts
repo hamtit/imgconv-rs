@@ -1,5 +1,5 @@
 // One benchmark scenario in a fresh process; prints a JSON line.
-//   bun run-one.ts --impl sharp|imgconv --format webp|avif|jxl --max 320 --concurrency 10 [--threads 1] [--passes 2] [--keep DIR]
+//   bun run-one.ts --impl sharp|imgconv --format webp|avif|jxl --max 320 --concurrency 10 [--threads 1] [--passes 2] [--corpus corpus|large] [--only REGEX] [--keep DIR]
 // `sharp` runs the sharp baseline (baseline.ts); `imgconv` runs this library.
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -25,7 +25,7 @@ function status(key: string): number {
 }
 const mb = (b: number) => Math.round((b / 1048576) * 10) / 10;
 
-const corpusDir = join(import.meta.dir, 'images/corpus');
+const corpusDir = join(import.meta.dir, 'images', args.get('corpus') ?? 'corpus');
 let names = readdirSync(corpusDir).filter((f) => !f.endsWith('.json')).sort();
 if (only) names = names.filter((n) => new RegExp(only).test(n));
 const inputs = names.map((n) => ({ name: n, buf: readFileSync(join(corpusDir, n)) }));
@@ -51,7 +51,7 @@ if (impl === 'sharp') {
     else await enc.encodeWithSharp(buf, `${outBase}.${format}`, format, max);
   };
 } else {
-  const imgconv = require(join(import.meta.dir, '..'));
+  const imgconv = require(process.env.IMGCONV_NODE ?? join(import.meta.dir, '..'));
   convertOne = async (_name, buf, outBase) => {
     const r = await imgconv.convert(buf, { format, quality: 65, maxDimension: max, threads });
     await saveFile(`${outBase}.${r.format}`, r.data);

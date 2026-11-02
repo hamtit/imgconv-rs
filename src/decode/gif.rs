@@ -47,21 +47,14 @@ impl<'a> GifFrames<'a> {
         })
     }
 
-    fn clip(&self, left: u16, top: u16, w: u16, h: u16) -> (usize, usize, usize, usize) {
-        let x0 = (left as usize).min(self.width as usize);
-        let y0 = (top as usize).min(self.height as usize);
-        let x1 = (left as usize + w as usize).min(self.width as usize);
-        let y1 = (top as usize + h as usize).min(self.height as usize);
-        (x0, y0, x1, y1)
-    }
-
     /// Next composited frame. Truncated data after at least one frame ends the
     /// animation instead of failing, as in browsers.
     pub fn next_frame(&mut self, first: bool) -> Result<Option<Frame<'_>>> {
+        let (width, height) = (self.width, self.height);
         if let Some((dispose, left, top, w, h)) = self.pending_dispose.take() {
             match dispose {
                 DisposalMethod::Background => {
-                    let (x0, y0, x1, y1) = self.clip(left, top, w, h);
+                    let (x0, y0, x1, y1) = clip(width, height, left, top, w, h);
                     let stride = self.width as usize * 4;
                     for y in y0..y1 {
                         self.canvas[y * stride + x0 * 4..y * stride + x1 * 4].fill(0);
@@ -90,9 +83,9 @@ impl<'a> GifFrames<'a> {
         if dispose == DisposalMethod::Previous {
             self.previous = Some(self.canvas.clone());
         }
-        let buffer = frame.buffer.to_vec();
-        let (x0, y0, x1, y1) = self.clip(left, top, fw, fh);
-        let stride = self.width as usize * 4;
+        let buffer = &frame.buffer[..];
+        let (x0, y0, x1, y1) = clip(width, height, left, top, fw, fh);
+        let stride = width as usize * 4;
         for y in y0..y1 {
             let src_row = (y - top as usize) * fw as usize * 4;
             for x in x0..x1 {
@@ -106,6 +99,16 @@ impl<'a> GifFrames<'a> {
         self.pending_dispose = Some((dispose, left, top, fw, fh));
         Ok(Some(Frame { rgba: &self.canvas, delay_ms }))
     }
+}
+
+/// Clip a rectangle at (left, top) of size w x h to a `width` x `height`
+/// canvas, as half-open pixel ranges.
+fn clip(width: u32, height: u32, left: u16, top: u16, w: u16, h: u16) -> (usize, usize, usize, usize) {
+    let x0 = (left as usize).min(width as usize);
+    let y0 = (top as usize).min(height as usize);
+    let x1 = (left as usize + w as usize).min(width as usize);
+    let y1 = (top as usize + h as usize).min(height as usize);
+    (x0, y0, x1, y1)
 }
 
 /// First frame of a GIF as a still image.

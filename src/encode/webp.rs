@@ -5,7 +5,7 @@ use libwebp_sys as w;
 
 use crate::bail;
 use crate::error::Result;
-use crate::image::Image;
+use crate::image::{Image, ImageView};
 
 fn config(quality: f32, effort: i32) -> Result<w::WebPConfig> {
     let Ok(mut config) = w::WebPConfig::new_with_preset(w::WebPPreset::WEBP_PRESET_DEFAULT, quality) else {
@@ -23,7 +23,7 @@ fn config(quality: f32, effort: i32) -> Result<w::WebPConfig> {
 struct Picture(w::WebPPicture);
 
 impl Picture {
-    fn import(img: &Image, use_argb: bool) -> Result<Self> {
+    fn import(img: ImageView, use_argb: bool) -> Result<Self> {
         let Ok(mut pic) = w::WebPPicture::new() else { bail!("libwebp picture version error") };
         pic.width = img.width as i32;
         pic.height = img.height as i32;
@@ -52,7 +52,7 @@ impl Drop for Picture {
 
 pub fn encode(img: &Image, quality: f32, effort: i32) -> Result<Vec<u8>> {
     let config = config(quality, effort)?;
-    let mut pic = Picture::import(img, false)?;
+    let mut pic = Picture::import(img.view(), false)?;
     unsafe {
         let mut writer = std::mem::zeroed::<w::WebPMemoryWriter>();
         w::WebPMemoryWriterInit(&mut writer);
@@ -99,7 +99,7 @@ impl AnimEncoder {
 
     /// Add an RGBA frame shown for `delay_ms` (<= 10 ms means 100 ms, as in
     /// browsers and libvips).
-    pub fn add(&mut self, frame: &Image, delay_ms: u32) -> Result<()> {
+    pub fn add(&mut self, frame: ImageView, delay_ms: u32) -> Result<()> {
         let mut pic = Picture::import(frame, true)?;
         unsafe {
             if w::WebPAnimEncoderAdd(self.enc, &mut pic.0, self.timestamp_ms, &self.config) == 0 {
