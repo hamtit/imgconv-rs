@@ -38,6 +38,10 @@ impl Image {
         self.channels = 3;
     }
 
+    pub fn view(&self) -> ImageView<'_> {
+        ImageView { width: self.width, height: self.height, channels: self.channels, data: &self.data }
+    }
+
     /// Return an RGBA copy (alpha 255 when the image has none).
     pub fn to_rgba(&self) -> Vec<u8> {
         if self.channels == 4 {
@@ -48,6 +52,39 @@ impl Image {
             out.extend_from_slice(&[p[0], p[1], p[2], 255]);
         }
         out
+    }
+}
+
+/// Borrowed pixels in the layout of `Image`, for passing data without copying it.
+#[derive(Clone, Copy, Debug)]
+pub struct ImageView<'a> {
+    pub width: u32,
+    pub height: u32,
+    pub channels: u8,
+    pub data: &'a [u8],
+}
+
+impl ImageView<'_> {
+    pub fn has_alpha(&self) -> bool {
+        self.channels == 4
+    }
+
+    pub fn stride(&self) -> usize {
+        self.width as usize * self.channels as usize
+    }
+
+    /// True when the view has alpha and every alpha value is 255.
+    pub fn is_opaque(&self) -> bool {
+        self.channels == 4 && self.data.chunks_exact(4).all(|p| p[3] == 255)
+    }
+
+    /// RGB copy of an RGBA view, without the alpha channel.
+    pub fn to_rgb(&self) -> Image {
+        let mut out = Vec::with_capacity(self.width as usize * self.height as usize * 3);
+        for p in self.data.chunks_exact(4) {
+            out.extend_from_slice(&p[..3]);
+        }
+        Image::new(self.width, self.height, 3, out)
     }
 }
 

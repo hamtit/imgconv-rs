@@ -5,7 +5,7 @@
 use crate::decode::{self, Decoded, gif::GifFrames, shrink_on_load};
 use crate::encode::{avif, jxl, webp};
 use crate::error::Result;
-use crate::image::Image;
+use crate::image::{Image, ImageView};
 use crate::probe::{self, Format, Info};
 use crate::{bail, color, orient, resize};
 
@@ -107,7 +107,7 @@ fn prepare_still(buf: &[u8], info: &Info, max_dimension: Option<u32>) -> Result<
     // Before the resize, so opaque images are resized as RGB.
     image.drop_opaque_alpha();
     let mut image = match stored_target {
-        Some((w, h)) if (image.width, image.height) != (w, h) => resize::resize(&image, w, h)?,
+        Some((w, h)) if (image.width, image.height) != (w, h) => resize::resize(&image.view(), w, h)?,
         _ => image,
     };
     image = orient::apply(image, orientation);
@@ -117,15 +117,17 @@ fn prepare_still(buf: &[u8], info: &Info, max_dimension: Option<u32>) -> Result<
     Ok(image)
 }
 
-fn encode_still(image: &Image, opts: &Options) -> Result<Vec<u8>> {
+/// Encode a still. Takes the image by value so AVIF can free the RGB pixels
+/// before its AV1 encode.
+fn encode_still(image: Image, opts: &Options) -> Result<Vec<u8>> {
     let effort = opts.effort.unwrap_or(opts.format.default_effort());
     match opts.format {
-        OutputFormat::Webp => webp::encode(image, opts.quality, effort as i32),
+        OutputFormat::Webp => webp::encode(&image, opts.quality, effort as i32),
         OutputFormat::Avif => avif::encode(
             image,
             avif::Settings { quality: opts.quality.round().clamp(0.0, 100.0) as u32, effort, threads: opts.threads },
         ),
-        OutputFormat::Jxl => jxl::encode(image, opts.quality.clamp(0.0, 100.0), effort, opts.threads),
+        OutputFormat::Jxl => jxl::encode(&image, opts.quality.clamp(0.0, 100.0), effort, opts.threads),
     }
 }
 
@@ -138,13 +140,12 @@ fn convert_animated_gif(buf: &[u8], info: &Info, opts: &Options) -> Result<Outpu
     let mut first = true;
     while let Some(frame) = frames.next_frame(first)? {
         first = false;
-        let canvas = Image::new(cw, ch, 4, frame.rgba.to_vec());
+        let canvas = ImageView { width: cw, height: ch, channels: 4, data: frame.rgba };
         let delay = frame.delay_ms;
-        let img = match target {
-            Some((tw, th)) => resize::resize(&canvas, tw, th)?,
-            None => canvas,
-        };
-        enc.add(&img, delay)?;
+        match target {
+            Some((tw, th)) => enc.add(resize::resize(&canvas, tw, th)?.view(), delay)?,
+            None => enc.add(canvas, delay)?,
+        }
     }
     let data = enc.finish()?;
     // libwebp merges identical consecutive frames, so count what was written.
@@ -180,8 +181,9 @@ pub fn convert(buf: &[u8], opts: &Options) -> Result<Output> {
             return convert_animated_gif(buf, &info, opts);
         }
         let image = prepare_still(buf, &info, opts.max_dimension)?;
-        let data = encode_still(&image, opts)?;
-        Ok(Output { data, format: opts.format, width: image.width, height: image.height, frames: 1, input: info })
+        let (width, height) = (image.width, image.height);
+        let data = encode_still(image, opts)?;
+        Ok(Output { data, format: opts.format, width, height, frames: 1, input: info })
     })
 }
 
@@ -192,15 +194,27 @@ pub fn convert_rgba(rgba: &[u8], width: u32, height: u32, opts: &Options) -> Res
     }
     check_pixels(width, height, 1, opts.max_pixels)?;
     guard(|| {
-        let mut src = Image::new(width, height, 4, rgba.to_vec());
-        src.drop_opaque_alpha();
-        let image = match opts.max_dimension.and_then(|m| resize::fit_inside(width, height, m)) {
-            Some((w, h)) => resize::resize(&src, w, h)?,
-            None => src,
+        let view = ImageView { width, height, channels: 4, data: rgba };
+        let target = opts.max_dimension.and_then(|m| resize::fit_inside(width, height, m));
+        // Opaque input is taken as RGB (the alpha is dropped while copying),
+        // so it is resized without alpha. Otherwise the borrowed pixels are
+        // resized directly, and copied only when no resize is needed.
+        let image = if view.is_opaque() {
+            let mut rgb = view.to_rgb();
+            if let Some((w, h)) = target {
+                rgb = resize::resize(&rgb.view(), w, h)?;
+            }
+            rgb
+        } else {
+            match target {
+                Some((w, h)) => resize::resize(&view, w, h)?,
+                None => Image::new(width, height, 4, rgba.to_vec()),
+            }
         };
-        let data = encode_still(&image, opts)?;
+        let (out_w, out_h) = (image.width, image.height);
+        let data = encode_still(image, opts)?;
         let input = Info { format: Format::Png, width, height, frames: 1, orientation: 1, max_frame_pixels: u64::from(width) * u64::from(height) };
-        Ok(Output { data, format: opts.format, width: image.width, height: image.height, frames: 1, input })
+        Ok(Output { data, format: opts.format, width: out_w, height: out_h, frames: 1, input })
     })
 }
 

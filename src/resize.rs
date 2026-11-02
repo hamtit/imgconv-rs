@@ -4,7 +4,7 @@ use fast_image_resize::images::{Image as FirImage, ImageRef};
 use fast_image_resize::{FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer};
 
 use crate::error::{Result, err};
-use crate::image::Image;
+use crate::image::{Image, ImageView};
 
 /// Target size for sharp's `fit: 'inside', withoutEnlargement: true`, or None
 /// when the image already fits.
@@ -21,12 +21,12 @@ pub fn fit_inside(width: u32, height: u32, max: u32) -> Option<(u32, u32)> {
     })
 }
 
-pub fn resize(img: &Image, width: u32, height: u32) -> Result<Image> {
+pub fn resize(img: &ImageView, width: u32, height: u32) -> Result<Image> {
     if img.width == width && img.height == height {
-        return Ok(img.clone());
+        return Ok(Image::new(width, height, img.channels, img.data.to_vec()));
     }
     let pixel_type = if img.channels == 4 { PixelType::U8x4 } else { PixelType::U8x3 };
-    let src = ImageRef::new(img.width, img.height, &img.data, pixel_type).map_err(|e| err(format!("resize: {e}")))?;
+    let src = ImageRef::new(img.width, img.height, img.data, pixel_type).map_err(|e| err(format!("resize: {e}")))?;
     let mut dst = FirImage::new(width, height, pixel_type);
     let opts = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::Lanczos3)).use_alpha(img.channels == 4);
     Resizer::new().resize(&src, &mut dst, &opts).map_err(|e| err(format!("resize: {e}")))?;

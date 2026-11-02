@@ -111,20 +111,22 @@ pub fn encode(img: &Image, quality: f32, effort: u32, threads: u32) -> Result<Ve
         )?;
         JxlEncoderCloseInput(enc.0);
 
-        let mut out = vec![0u8; (img.data.len() / 8).max(64 * 1024)];
-        let mut used = 0usize;
+        // libjxl writes straight into the spare capacity, so the buffer is never zero-filled.
+        let mut out: Vec<u8> = Vec::with_capacity((img.data.len() / 8).max(64 * 1024));
         loop {
-            let mut next = out.as_mut_ptr().add(used);
-            let mut avail = out.len() - used;
+            let spare = out.spare_capacity_mut();
+            let room = spare.len();
+            let mut next = spare.as_mut_ptr().cast::<u8>();
+            let mut avail = room;
             let status = JxlEncoderProcessOutput(enc.0, &mut next, &mut avail);
-            used = out.len() - avail;
+            // libjxl initialises the bytes it reports as written.
+            out.set_len(out.len() + (room - avail));
             match status {
-                JxlEncoderStatus_JXL_ENC_NEED_MORE_OUTPUT => out.resize(out.len() * 2, 0),
+                JxlEncoderStatus_JXL_ENC_NEED_MORE_OUTPUT => out.reserve(out.len()),
                 JxlEncoderStatus_JXL_ENC_SUCCESS => break,
                 s => bail!("JxlEncoderProcessOutput failed (status {s})"),
             }
         }
-        out.truncate(used);
         out.shrink_to_fit();
         Ok(out)
     }

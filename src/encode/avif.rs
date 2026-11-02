@@ -209,19 +209,20 @@ fn rgb_to_ycbcr(img: &Image, subsampled: bool) -> (Vec<u8>, Vec<u8>, Vec<u8>, us
     (y, u, v, cw)
 }
 
-pub fn encode(img: &Image, s: Settings) -> Result<Vec<u8>> {
+pub fn encode(img: Image, s: Settings) -> Result<Vec<u8>> {
     // libvips' rule: 4:2:0 below quality 90, 4:4:4 from 90. (sharp overrides
     // it with chromaSubsampling '4:4:4' by default; 4:2:0 is kept here as it
     // encodes faster and smaller, see README.)
     let subsampled = s.quality < 90;
-    let (y, u, v, chroma_w) = rgb_to_ycbcr(img, subsampled);
-    let color = encode_av1(img.width, img.height, Plane::Color { y: &y, u: &u, v: &v, chroma_w, subsampled }, s)?;
+    let (width, height) = (img.width, img.height);
+    let alpha_plane: Option<Vec<u8>> = img.has_alpha().then(|| img.data.chunks_exact(4).map(|p| p[3]).collect());
+    let (y, u, v, chroma_w) = rgb_to_ycbcr(&img, subsampled);
+    drop(img);
+    let color = encode_av1(width, height, Plane::Color { y: &y, u: &u, v: &v, chroma_w, subsampled }, s)?;
     drop((y, u, v));
-    let alpha = if img.has_alpha() {
-        let a: Vec<u8> = img.data.chunks_exact(4).map(|p| p[3]).collect();
-        Some(encode_av1(img.width, img.height, Plane::Alpha(&a), s)?)
-    } else {
-        None
+    let alpha = match &alpha_plane {
+        Some(a) => Some(encode_av1(width, height, Plane::Alpha(a), s)?),
+        None => None,
     };
     let mut avif = avif_serialize::Aviffy::new();
     avif.set_full_color_range(true)
@@ -230,7 +231,7 @@ pub fn encode(img: &Image, s: Settings) -> Result<Vec<u8>> {
         .set_color_primaries(avif_serialize::constants::ColorPrimaries::Bt709)
         .set_chroma_subsampling((subsampled, subsampled))
         .set_seq_profile(if subsampled { 0 } else { 1 });
-    Ok(avif.to_vec(&color, alpha.as_deref(), img.width, img.height, 8))
+    Ok(avif.to_vec(&color, alpha.as_deref(), width, height, 8))
 }
 
 pub fn version() -> String {

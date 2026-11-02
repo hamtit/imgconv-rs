@@ -64,12 +64,21 @@ fn apply_profile(img: &mut Image, profile: &ColorProfile) {
     else {
         return;
     };
-    let src = img.data.clone();
+    transform_rows_in_place(img, |s, d| transform.transform(s, d).is_ok());
+}
+
+/// Transform each row through `f(src, dst)`, in place. A row that fails is
+/// left as it was; if the first row fails nothing is changed.
+fn transform_rows_in_place(img: &mut Image, mut f: impl FnMut(&[u8], &mut [u8]) -> bool) {
     let stride = img.stride();
-    for (s, d) in src.chunks_exact(stride).zip(img.data.chunks_exact_mut(stride)) {
-        if transform.transform(s, d).is_err() {
-            img.data = src;
-            return;
+    let mut scratch = vec![0u8; stride];
+    for (i, row) in img.data.chunks_exact_mut(stride).enumerate() {
+        scratch.copy_from_slice(row);
+        if !f(&scratch, row) {
+            row.copy_from_slice(&scratch);
+            if i == 0 {
+                return;
+            }
         }
     }
 }
@@ -83,15 +92,23 @@ fn gray_to_srgb(img: &mut Image, profile: &ColorProfile) {
         return;
     };
     let c = img.channels as usize;
-    let gray: Vec<u8> = img.data.chunks_exact(c).flat_map(|p| if c == 4 { vec![p[0], p[3]] } else { vec![p[0]] }).collect();
-    let (src_stride, dst_stride) = (img.width as usize * (c - 2), img.stride());
-    let mut out = vec![0u8; img.data.len()];
-    for (s, d) in gray.chunks_exact(src_stride).zip(out.chunks_exact_mut(dst_stride)) {
-        if transform.transform(s, d).is_err() {
+    let stride = img.stride();
+    let mut gray = vec![0u8; img.width as usize * (c - 2)];
+    let mut out = vec![0u8; stride];
+    for (i, row) in img.data.chunks_exact_mut(stride).enumerate() {
+        // Gray (and alpha) samples of this row, then the converted row back in place.
+        for (g, p) in gray.chunks_exact_mut(c - 2).zip(row.chunks_exact(c)) {
+            g[0] = p[0];
+            if c == 4 {
+                g[1] = p[3];
+            }
+        }
+        if transform.transform(&gray, &mut out).is_ok() {
+            row.copy_from_slice(&out);
+        } else if i == 0 {
             return;
         }
     }
-    img.data = out;
 }
 
 /// Convert CMYK samples (as decoded by libjpeg) to RGB. With an embedded
