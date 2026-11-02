@@ -12,6 +12,7 @@ pub mod memory;
 pub mod orient;
 pub mod probe;
 pub mod resize;
+pub mod stream;
 
 #[cfg(feature = "napi")]
 mod node;

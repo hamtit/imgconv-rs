@@ -96,9 +96,9 @@ fn prepare_still(buf: &[u8], info: &Info, max_dimension: Option<u32>) -> Result<
     let shrink = |t: Option<(u32, u32)>| t.map_or(1, |t| shrink_on_load(info.width, info.height, t));
 
     let Decoded { mut image, icc, orientation } = match info.format {
-        Format::Jpeg => decode::jpeg::decode(buf, shrink(stored_target))?,
+        Format::Jpeg => decode::jpeg::decode(buf, shrink(stored_target), stored_target)?,
         Format::Webp => decode::webp::decode(buf, shrink(stored_target))?,
-        Format::Png => decode::png::decode(buf)?,
+        Format::Png => decode::png::decode(buf, stored_target)?,
         Format::Gif => Decoded::plain(decode::gif::decode_first(buf)?),
         Format::Avif => decode::avif::decode(buf)?,
         // Rendered straight at the target size.
@@ -167,6 +167,7 @@ fn guard<T>(f: impl FnOnce() -> Result<T>) -> Result<T> {
         }
     }
 }
+
 
 /// Convert an encoded image.
 pub fn convert(buf: &[u8], opts: &Options) -> Result<Output> {
