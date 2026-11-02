@@ -122,7 +122,8 @@ pub fn encode(img: &Image, quality: f32, effort: u32, threads: u32) -> Result<Ve
             // libjxl initialises the bytes it reports as written.
             out.set_len(out.len() + (room - avail));
             match status {
-                JxlEncoderStatus_JXL_ENC_NEED_MORE_OUTPUT => out.reserve(out.len()),
+                // Always grow: at least double, and never by 0 bytes.
+                JxlEncoderStatus_JXL_ENC_NEED_MORE_OUTPUT => out.reserve(out.capacity().max(64 * 1024)),
                 JxlEncoderStatus_JXL_ENC_SUCCESS => break,
                 s => bail!("JxlEncoderProcessOutput failed (status {s})"),
             }

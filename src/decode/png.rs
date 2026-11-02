@@ -70,5 +70,8 @@ fn decode_streamed(reader: &mut png::Reader<Cursor<&[u8]>>, tw: u32, th: u32) ->
             stream.push_row(row.data())?;
         }
     }
+    // Read the rest of the stream (Adler-32, CRCs, IEND) so a damaged tail is
+    // rejected exactly as it is when the image is decoded in one piece.
+    reader.finish().map_err(png_err)?;
     Ok(Image::new(tw, th, channels, stream.finish()?))
 }

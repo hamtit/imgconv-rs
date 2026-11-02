@@ -230,3 +230,12 @@ describe('alpha after shrinking', () => {
     expect((await sharp(out.data).metadata()).hasAlpha).toBe(false);
   });
 });
+
+describe('damaged PNG tail', () => {
+  test('is rejected the same way whether or not the image is shrunk', async () => {
+    const png = await sharp(await photo(600, 400)).png().toBuffer();
+    const damaged = png.subarray(0, png.length - 20);
+    await expect(convert(damaged, { format: 'webp' })).rejects.toThrow();
+    await expect(convert(damaged, { format: 'webp', maxDimension: 100 })).rejects.toThrow();
+  });
+});
