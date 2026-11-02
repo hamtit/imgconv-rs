@@ -10,7 +10,7 @@ sharp (libvips) は汎用の画像処理ライブラリだが、Web 配信用の
 |---|---|
 | 入力 | JPEG (CMYK を含む)、PNG (16bit・パレット・APNG の先頭フレーム)、GIF、WebP (アニメーションは先頭フレーム)、AVIF、SVG |
 | 出力 | WebP、AVIF、JPEG XL (`quality: 100` で可逆)。複数フレームの GIF は出力形式に関わらずアニメーション WebP |
-| 縮小 | sharp の `fit: 'inside', withoutEnlargement: true` と同じ寸法。Lanczos3、アルファは乗算済みで処理。JPEG は sharp と同じ規則で DCT 縮小デコード (shrink-on-load)、WebP は libwebp のスケーラーで 2 の累乗まで縮小してからデコード、SVG は目標サイズで直接ラスタライズ |
+| 縮小 | sharp の `fit: 'inside', withoutEnlargement: true` と同じ寸法。Lanczos3、アルファは乗算済みで処理。JPEG は sharp と同じ規則で DCT 縮小デコード (shrink-on-load)、WebP は libwebp のスケーラーで 2 の累乗まで縮小してからデコード、SVG は目標サイズで直接ラスタライズ。PNG と、DCT 縮小でも目標に届かない JPEG は、行を読みながら縮小する (元の大きさの画素列はメモリに置かない。結果は一括の縮小と同じ) |
 | 色 | 埋め込み ICC プロファイルを sRGB に変換してから出力 (sharp と同じ)。完全に不透明なアルファチャンネルは捨てる |
 | 向き | EXIF Orientation を適用して正立させる |
 | 安全性 | デコード前にヘッダーから画素数を調べて上限 (既定は sharp と同じ 268,402,689) を超えたら拒否。アニメーション GIF は全フレームの合計で判定 |
@@ -47,6 +47,8 @@ await convertRgba(rgba, width, height, { format: 'webp' }); // ICO から取り�
 
 - `threads` (既定 1): 1 枚の変換に使うエンコーダーのスレッド数 (AVIF / JPEG XL)。並行に何枚も変換するサーバーでは 1 が最も速い ([ベンチマーク](#ベンチマーク))
 - 変換が 1 つも動いていない状態になると `malloc_trim(0)` を呼び、解放済みのヒープを OS に返す (glibc のみ)
+- 読み込み時に glibc の malloc を調整する (アリーナ数の上限 4、mmap しきい値 256 KiB に固定)。大きな画像バッファが mmap になり、解放と同時に OS へ返る。環境変数 `IMGCONV_MMAP_THRESHOLD` (バイト) と `IMGCONV_ARENA_MAX` で変えられ、0 ならその項目は触らない
+- `setMemoryBudget(megabytes)` (または環境変数 `IMGCONV_MEMORY_BUDGET_MB`): 同時に動く変換の推定メモリの合計がこの値を超えないよう、超える分はワーカースレッド上で待たせる。既定は 0 (制限なし)。1 枚だけで超える画像は、ほかが止まっているときに単独で動く。メモリを減らす代わりに並列度が下がるので、コア数 × 1 枚ぶんより小さくすると遅くなる
 
 ## ビルド
 

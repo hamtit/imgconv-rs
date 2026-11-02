@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'bun:test';
 import sharp from 'sharp';
 import { readFileSync } from 'node:fs';
-import { convert, convertRgba, probe, versions } from '..';
+import { convert, convertRgba, probe, setMemoryBudget, versions } from '..';
 
 // Cargo.toml is the one place the version is written.
 const cargoVersion = readFileSync(new URL('../Cargo.toml', import.meta.url), 'utf8').match(/^version\s*=\s*"([^"]+)"/m)![1];
@@ -188,5 +188,49 @@ describe('convertRgba', () => {
     expect([r.width, r.height]).toEqual([32, 16]);
     expect((await pixel(r.data, 10, 10)).slice(0, 3).map((v) => Math.round(v / 10))).toEqual([25, 0, 0]);
     await expect(convertRgba(rgba.subarray(1), 64, 32, { format: 'webp' })).rejects.toThrow('does not match');
+  });
+});
+
+describe('row-streaming shrink', () => {
+  // PNG (and JPEG at a scale under 2) are shrunk while decoding; the result
+  // must match shrinking the fully decoded image.
+  test('PNG, gray and RGBA inputs shrink like a full decode', async () => {
+    const rgb = await sharp(await photo(900, 600)).png().toBuffer();
+    const rgba = await sharp(await photo(900, 600)).ensureAlpha(0.5).png().toBuffer();
+    const gray = await sharp(await photo(900, 600)).grayscale().png().toBuffer();
+    for (const input of [rgb, rgba, gray]) {
+      const out = await convert(input, { format: 'webp', quality: 100, maxDimension: 300 });
+      expect([out.width, out.height]).toEqual([300, 200]);
+      const reference = await sharp(input).resize(300, 200, { kernel: 'lanczos3' }).raw().toBuffer({ resolveWithObject: true });
+      const got = await sharp(out.data).raw().toBuffer({ resolveWithObject: true });
+      expect(got.info.channels).toBe(reference.info.channels);
+      let sum = 0;
+      for (let i = 0; i < got.data.length; i++) sum += Math.abs(got.data[i] - reference.data[i]);
+      expect(sum / got.data.length).toBeLessThan(3);
+    }
+  });
+
+  test('JPEG scaled by less than 2 is shrunk while decoding', async () => {
+    const input = await photo(1000, 700);
+    const out = await convert(input, { format: 'webp', quality: 100, maxDimension: 640 });
+    expect([out.width, out.height]).toEqual([640, 448]);
+    // The yellow square in the top-left corner survives the shrink.
+    const [r, g, b] = await pixel(out.data, 10, 10);
+    expect(r).toBeGreaterThan(240);
+    expect(g).toBeGreaterThan(240);
+    expect(b).toBeLessThan(15);
+  });
+});
+
+describe('memory budget', () => {
+  test('conversions over the budget wait but all finish', async () => {
+    const input = await photo(1200, 800);
+    setMemoryBudget(1); // smaller than any conversion: they run one at a time
+    try {
+      const results = await Promise.all(Array.from({ length: 6 }, () => convert(input, { format: 'webp', maxDimension: 400 })));
+      expect(results.every((r) => r.width === 400)).toBe(true);
+    } finally {
+      setMemoryBudget(0);
+    }
   });
 });

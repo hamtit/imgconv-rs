@@ -7,7 +7,7 @@ use crate::encode::{avif, jxl, webp};
 use crate::error::Result;
 use crate::image::{Image, ImageView};
 use crate::probe::{self, Format, Info};
-use crate::{bail, color, orient, resize};
+use crate::{bail, budget, color, orient, resize};
 
 /// sharp's default `limitInputPixels` (0x3FFF * 0x3FFF).
 pub const DEFAULT_MAX_PIXELS: u64 = 268_402_689;
@@ -169,6 +169,45 @@ fn guard<T>(f: impl FnOnce() -> Result<T>) -> Result<T> {
 }
 
 
+/// Rough peak working set of a conversion in bytes (decoded pixels, the
+/// resized copy and the encoder's buffers), used to admit conversions against
+/// the memory budget. A heuristic, calibrated against peak RSS measured for
+/// one 1920px conversion per format (WebP ~40-75 MB, AVIF ~80 MB, JPEG XL ~160 MB).
+fn estimate_bytes(info: &Info, opts: &Options) -> u64 {
+    let (ow, oh) = orient::oriented_size(info.width, info.height, info.orientation);
+    let target = opts.max_dimension.and_then(|m| resize::fit_inside(ow, oh, m));
+    let (tw, th) = target.unwrap_or((ow, oh));
+    let out_px = u64::from(tw) * u64::from(th);
+    let src_px = u64::from(info.width) * u64::from(info.height);
+    let encoder = out_px
+        * match opts.format {
+            OutputFormat::Webp => 20,
+            OutputFormat::Avif => 30,
+            OutputFormat::Jxl => 60,
+        };
+    if info.format == Format::Gif && info.frames > 1 && opts.animated {
+        // Composited canvas, previous-frame copy and the animation encoder.
+        return src_px * 8 + out_px * 8;
+    }
+    let decoded = match (info.format, target) {
+        // Shrunk row by row while decoding: the output plus a window of
+        // source rows (about 64 rows plus the filter margin).
+        (Format::Jpeg | Format::Png | Format::Svg, Some((_, th))) => {
+            let scale = f64::from(oh) / f64::from(th);
+            let window_rows = 64.0 + 6.0 * scale.max(1.0);
+            out_px * 4 + (window_rows * f64::from(ow) * 4.0) as u64
+        }
+        (Format::Webp, Some(t)) => {
+            let s = u64::from(shrink_on_load(info.width, info.height, t));
+            src_px / (s * s) * 4 + out_px * 4
+        }
+        (Format::Avif, _) => src_px * 8 + out_px * 4,
+        (_, Some(_)) => src_px * 4 + out_px * 4,
+        (_, None) => src_px * 4,
+    };
+    decoded + encoder
+}
+
 /// Convert an encoded image.
 pub fn convert(buf: &[u8], opts: &Options) -> Result<Output> {
     guard(|| {
@@ -177,6 +216,7 @@ pub fn convert(buf: &[u8], opts: &Options) -> Result<Output> {
         if info.max_frame_pixels > opts.max_pixels {
             bail!("Image exceeds pixel limit: {} pixels", info.max_frame_pixels);
         }
+        let _permit = budget::acquire(estimate_bytes(&info, opts));
         if info.format == Format::Gif && info.frames > 1 && opts.animated {
             check_pixels(info.width, info.height, info.frames, opts.max_pixels)?;
             return convert_animated_gif(buf, &info, opts);
@@ -195,6 +235,7 @@ pub fn convert_rgba(rgba: &[u8], width: u32, height: u32, opts: &Options) -> Res
     }
     check_pixels(width, height, 1, opts.max_pixels)?;
     guard(|| {
+        let _permit = budget::acquire(u64::from(width) * u64::from(height) * 4 + u64::from(width) * u64::from(height) * 6);
         let view = ImageView { width, height, channels: 4, data: rgba };
         let target = opts.max_dimension.and_then(|m| resize::fit_inside(width, height, m));
         // Opaque input is taken as RGB (the alpha is dropped while copying),

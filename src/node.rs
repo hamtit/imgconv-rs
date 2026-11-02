@@ -153,6 +153,14 @@ pub fn convert_rgba(
     AsyncTask::with_optional_signal(ConvertTask { input: Input::Rgba(rgba, width, height), options }, signal)
 }
 
+/// Limit the estimated working set of conversions running at once, in
+/// megabytes (0 = unlimited, the default). Conversions over the limit wait on
+/// the worker thread, so a few huge images cannot be decoded together.
+#[napi]
+pub fn set_memory_budget(megabytes: f64) {
+    crate::budget::set_budget((megabytes.max(0.0) * 1048576.0) as u64);
+}
+
 /// Read format, size and frame count from the header without decoding pixels.
 #[napi]
 pub fn probe(input: Buffer) -> Result<ImageInfo> {
