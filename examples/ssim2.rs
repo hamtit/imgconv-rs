@@ -1,12 +1,8 @@
-#![allow(non_upper_case_globals)]
 //! Benchmark helper: SSIMULACRA2 score of candidates against a reference.
 //!   ssim2 REFERENCE.png CANDIDATE.(png|jxl) [CANDIDATE...]
 //! Prints one line per candidate: "<score> <path>", or "NaN <path> <reason>".
 //! Alpha is composited over mid-gray before scoring.
 
-use std::ptr;
-
-use imgconv_rs::jxl::sys::*;
 use ssimulacra2::{ColorPrimaries, Rgb, TransferCharacteristic, compute_frame_ssimulacra2};
 
 struct Rgba {
@@ -31,37 +27,22 @@ fn read_png(path: &str) -> Rgba {
 }
 
 fn read_jxl(path: &str) -> Rgba {
-    let bytes = std::fs::read(path).unwrap();
-    unsafe {
-        let dec = JxlDecoderCreate(ptr::null());
-        assert_eq!(
-            JxlDecoderSubscribeEvents(dec, (JxlDecoderStatus_JXL_DEC_BASIC_INFO | JxlDecoderStatus_JXL_DEC_FULL_IMAGE) as i32),
-            JxlDecoderStatus_JXL_DEC_SUCCESS
-        );
-        JxlDecoderSetInput(dec, bytes.as_ptr(), bytes.len());
-        JxlDecoderCloseInput(dec);
-        let format = JxlPixelFormat { num_channels: 4, data_type: JxlDataType_JXL_TYPE_UINT8, endianness: JxlEndianness_JXL_NATIVE_ENDIAN, align: 0 };
-        let mut info = std::mem::MaybeUninit::<JxlBasicInfo>::zeroed().assume_init();
-        let mut out = Vec::new();
-        loop {
-            match JxlDecoderProcessInput(dec) {
-                JxlDecoderStatus_JXL_DEC_BASIC_INFO => {
-                    JxlDecoderGetBasicInfo(dec, &mut info);
-                }
-                JxlDecoderStatus_JXL_DEC_NEED_IMAGE_OUT_BUFFER => {
-                    let mut size = 0;
-                    JxlDecoderImageOutBufferSize(dec, &format, &mut size);
-                    out.resize(size, 0);
-                    JxlDecoderSetImageOutBuffer(dec, &format, out.as_mut_ptr().cast(), size);
-                }
-                JxlDecoderStatus_JXL_DEC_FULL_IMAGE => {}
-                JxlDecoderStatus_JXL_DEC_SUCCESS => break,
-                s => panic!("JXL decode failed: status {s}"),
-            }
-        }
-        JxlDecoderDestroy(dec);
-        Rgba { w: info.xsize, h: info.ysize, data: out }
-    }
+    let image = jxl_oxide::JxlImage::builder().open(path).unwrap();
+    let render = image.render_frame(0).unwrap();
+    let fb = render.image_all_channels();
+    let ch = fb.channels();
+    let to8 = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+    let data = fb
+        .buf()
+        .chunks(ch)
+        .flat_map(|p| match ch {
+            1 => [to8(p[0]), to8(p[0]), to8(p[0]), 255],
+            2 => [to8(p[0]), to8(p[0]), to8(p[0]), to8(p[1])],
+            3 => [to8(p[0]), to8(p[1]), to8(p[2]), 255],
+            _ => [to8(p[0]), to8(p[1]), to8(p[2]), to8(p[3])],
+        })
+        .collect();
+    Rgba { w: fb.width() as u32, h: fb.height() as u32, data }
 }
 
 fn to_rgb(img: &Rgba) -> Rgb {

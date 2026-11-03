@@ -23,7 +23,7 @@ sharp (libvips) は汎用の画像処理ライブラリだが、Web 配信用の
 |---|---|---|---|
 | WebP エンコード・デコード | libwebp (`libwebp-sys`) | 1.6.0 | sharp と同じ版。libvips と同じ設定 (preset default、method 4、alpha_quality 100) にしており、同じ画素からは**同一バイト列**を出力する |
 | AVIF エンコード・デコード | libaom (ソースからビルド) | 3.15.1 | sharp と同じ版。libheif 1.23 が libaom に渡す設定 (all-intra、speed = 9 - effort、tune IQ、quality 90 未満は 4:2:0 (libvips の規則。sharp は既定で 4:4:4 に上書きしているが、ここでは合わせない)、BT.601 full range、auto tiles など) を再現 |
-| JPEG XL エンコード | libjxl (ソースからビルド) | 0.12.0 | libjxl-native と同じ版・同じ設定 (effort 7、buffering 2、quality → distance) |
+| JPEG XL エンコード | [jxl-mini-encoder](https://github.com/hamtit/jxl-mini-encoder) (純 Rust、git タグで固定) | 0.1.0 | libjxl 0.12.0 の代わり。effort 7、quality → distance の変換は libjxl と同じ。libjxl との違いは [libjxl を使っていないことによる差](#libjxl-を使っていないことによる差) |
 | JPEG デコード | mozjpeg (`mozjpeg-sys` 2.2) | | sharp と同じく mozjpeg (libjpeg-turbo 系の SIMD デコーダー) |
 | PNG / GIF デコード | `png` / `gif` クレート | | Rust 実装 |
 | 縮小 | `fast_image_resize` | 6 | SIMD (AVX2 / NEON) の Lanczos3 |
@@ -56,7 +56,7 @@ Linux (glibc / musl、x64 / arm64) 向け。必要なもの: Rust、CMake、C/C+
 ./scripts/build.sh
 ```
 
-`scripts/fetch-deps.sh` が libaom と libjxl のソースを `vendor/` に取得し (SHA-256 を検証)、`build.rs` が CMake で静的ライブラリとしてビルドして組み込む。できた `imgconv-rs.linux-<arch>-<libc>.node` を `index.js` が読み込む。
+`scripts/fetch-deps.sh` が libaom のソースを `vendor/` に取得し (SHA-256 を検証)、`build.rs` が CMake で静的ライブラリとしてビルドして組み込む。JPEG XL は純 Rust の jxl-mini-encoder なので、C/C++ のビルドは要らない。できた `imgconv-rs.linux-<arch>-<libc>.node` を `index.js` が読み込む。
 
 ```bash
 bun install
@@ -135,9 +135,28 @@ sharp 0.35.5 を使った一般的な変換 (WebP / AVIF は sharp、JPEG XL は
 - **メモリが減った理由**: 並列で同時に動くエンコードの数が CPU 数に抑えられることと、libvips の常駐分・キャッシュがないこと。変換後の RSS が大きく下がるのは、変換が 1 つも動いていないときに `malloc_trim(0)` で解放済みのメモリを OS に返しているため (sharp の場合は glibc の arena にピークのまま残る)
 - **WebP**: 同じ画素からは sharp と同一のバイト列になる。画質の差は縮小処理の差。320px での差は、sharp (libvips) の縮小がこの基準よりわずかにぼけるため
 - **AVIF**: sharp は `chromaSubsampling` の既定を 4:4:4 にしている (libvips 自体の既定は quality 90 未満で 4:2:0)。このライブラリは libvips の規則どおり 4:2:0 にしているので、縮小しない大きい画像では色差の分だけ sharp より約 1 点低く、ファイルは 1.5% 小さい。サムネイルでは縮小の差のほうが大きく、このライブラリが上回る
-- **JPEG XL**: 同じ libjxl・同じ設定。違いは縮小と、完全に不透明な画像でアルファチャンネルを付けないこと
+- **JPEG XL**: この表の JPEG XL の数値は、libjxl 0.12.0 を使っていた版 (v0.2.0) で測ったもの。現在は jxl-mini-encoder に替えており、再測定していない (差は次の節)。当時の違いは縮小と、完全に不透明な画像でアルファチャンネルを付けないこと
 - **アニメーション GIF**: 両者とも libwebp でアニメーション WebP にしており、出力サイズはほぼ同じ (上の表の速度・メモリには含まれる)
+
+### libjxl を使っていないことによる差
+
+JPEG XL のエンコーダーを libjxl 0.12.0 から jxl-mini-encoder 0.1.0 に替えた。libjxl のアルゴリズムと定数を元にした純 Rust 実装だが、出力は libjxl と同じにならない。替える前に、同じ画素・effort 7・1 スレッドで両者を比べた (Kodak 2 枚と写真 3 枚 1200×800 / 1920×1280 / 4000×2667、同じマシン、時間は 3 回の最速値、メモリは入力読み込み後の増分の最大 RSS)。
+
+| | libjxl 0.12.0 | jxl-mini-encoder 0.1.0 |
+|---|---|---|
+| 時間 (非可逆 q75 / q90) | 基準 | ほぼ同じ (±15%、ばらつきの範囲)。4 スレッドでも同じ |
+| 時間 (可逆) | 基準 | 7〜41% 速い |
+| メモリ (非可逆) | 21〜287 MB | 3〜188 MB (768×512 と 1920×1280 で約 1/4〜1/6、4000×2667 で約 2/3) |
+| メモリ (可逆) | 24〜153 MB | 11〜40 MB |
+| サイズ (可逆) | 基準 | 2.4〜4.7% 大きい。画素は完全に一致 |
+| 画質 (非可逆、同じ quality) | 基準 | SSIMULACRA2 が 0.3〜2.0 点低く、ファイルも小さい |
+| サイズ (非可逆、同じ SSIMULACRA2) | 基準 | 低〜中画質 (65〜75) で 0〜4% 大きく、高画質 (80〜85) で ±1% 以内 (Kodak 2 枚) |
+
+- 同じ `quality` を指定すると、libjxl より少し画質が低くサイズも小さい。画質を揃えたいときは `quality` を数ポイント上げる
+- 未実装: AFV、ノイズ合成、スプライン、butteraugli による反復量子化。入力は 8 bit sRGB の RGB / RGBA だけ (このライブラリが渡す画素はもともとそうなっている)
+- 出力は ICC を持たない裸のコードストリーム (`FF 0A`)。jxl-oxide と libjxl に加えて jxl-rs (`jxl_cli`) でデコードできることを確認した
+- 未測定: RGBA の画質とサイズ、effort 7 以外、4000×2667 の可逆でのメモリと時間 (jxl-mini-encoder 側)、wasm ビルドでの動作 (CI で確認する)
 
 ## ライセンス
 
-MIT ([LICENSE](LICENSE))。静的に組み込む libwebp・libaom・libjxl・mozjpeg などのライセンスは、リリースの tarball の `licenses/` に含まれる。
+MIT ([LICENSE](LICENSE))。静的に組み込む libwebp・libaom・mozjpeg などのライセンスは、リリースの tarball の `licenses/` に含まれる。

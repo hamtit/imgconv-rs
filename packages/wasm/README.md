@@ -17,7 +17,7 @@ import createImgconv from 'imgconv-rs-wasm';
 const imgconv = await createImgconv();
 const { data, width, height } = imgconv.convert(bytes, { format: 'webp', quality: 65, maxDimension: 320 });
 imgconv.probe(bytes); // { format, width, height, frames, orientation }
-imgconv.versions();   // { imgconvRs, libwebp, libaom, libjxl }
+imgconv.versions();   // { imgconvRs, libwebp, libaom, jxlMiniEncoder }
 ```
 
 The module is an ES module for browsers, workers and Node.js. Conversions

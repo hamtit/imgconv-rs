@@ -38,7 +38,7 @@ impl OutputFormat {
     }
 
     /// Encoder effort used when none is given: sharp's defaults (WebP 4,
-    /// AVIF 4) and libjxl's effort 7 for JPEG XL.
+    /// AVIF 4) and jxl-mini-encoder's effort 7 for JPEG XL.
     pub fn default_effort(self) -> u32 {
         match self {
             OutputFormat::Webp | OutputFormat::Avif => 4,
@@ -226,11 +226,11 @@ pub fn convert_rgba(rgba: &[u8], width: u32, height: u32, opts: &Options) -> Res
 pub struct Versions {
     pub libwebp: String,
     pub libaom: String,
-    pub libjxl: String,
+    pub jxl_mini_encoder: String,
 }
 
 pub fn versions() -> Versions {
-    Versions { libwebp: webp::version(), libaom: avif::version(), libjxl: jxl::version() }
+    Versions { libwebp: webp::version(), libaom: avif::version(), jxl_mini_encoder: jxl::version() }
 }
 
 /// Decode, resize, orient and color-convert without encoding (for tests and tools).
