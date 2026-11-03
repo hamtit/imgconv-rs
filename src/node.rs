@@ -158,7 +158,7 @@ pub struct Versions {
     pub imgconv_rs: String,
     pub libwebp: String,
     pub libaom: String,
-    pub libjxl: String,
+    pub jxl_mini_encoder: String,
 }
 
 #[napi]
@@ -168,6 +168,6 @@ pub fn versions() -> Versions {
         imgconv_rs: env!("CARGO_PKG_VERSION").into(),
         libwebp: v.libwebp,
         libaom: v.libaom,
-        libjxl: v.libjxl,
+        jxl_mini_encoder: v.jxl_mini_encoder,
     }
 }

@@ -5,7 +5,7 @@
 #
 # <out-dir> receives dist/imgconv.{js,wasm} (ES module, MODULARIZE) and
 # licenses/. Plain wasm32, no SIMD and no threads: the C codecs are built
-# with AOM_TARGET_CPU=generic and libjxl without WASM_THREADS.
+# with AOM_TARGET_CPU=generic; jxl-mini-encoder is pure Rust.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 out="$(realpath -m "${1:?out dir}")"
@@ -13,7 +13,7 @@ cd "$here"
 
 ./scripts/fetch-deps.sh
 # One exception / setjmp model everywhere: rustc uses WebAssembly exceptions,
-# so the C and C++ code (libaom's longjmp, mozjpeg, libwebp, libjxl) is
+# so the C and C++ code (libaom's longjmp, mozjpeg, libwebp) is
 # compiled for it too. The cc crate and cmake-rs pick these variables up.
 export CFLAGS_wasm32_unknown_emscripten="-fwasm-exceptions"
 export CXXFLAGS_wasm32_unknown_emscripten="-fwasm-exceptions"
@@ -45,7 +45,7 @@ em++ -O3 \
   "$lib" \
   -o "$out/dist/imgconv.js"
 
-# Licenses: the same set as the native packages (crates + libaom + libjxl),
+# Licenses: the same set as the native packages (crates + libaom),
 # plus what Emscripten links in.
 ./scripts/collect-licenses.sh
 cp -R licenses "$out/licenses"

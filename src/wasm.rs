@@ -201,13 +201,13 @@ pub extern "C" fn imgconv_last_error() -> *const c_char {
     LAST_ERROR.with(|e| e.borrow().as_ptr())
 }
 
-/// `"<imgconv-rs>\n<libwebp>\n<libaom>\n<libjxl>"`, NUL-terminated and static.
+/// `"<imgconv-rs>\n<libwebp>\n<libaom>\n<jxl-mini-encoder>"`, NUL-terminated and static.
 #[unsafe(no_mangle)]
 pub extern "C" fn imgconv_versions() -> *const c_char {
     thread_local! {
         static V: CString = {
             let v = convert::versions();
-            CString::new(format!("{}\n{}\n{}\n{}", env!("CARGO_PKG_VERSION"), v.libwebp, v.libaom, v.libjxl)).unwrap_or_default()
+            CString::new(format!("{}\n{}\n{}\n{}", env!("CARGO_PKG_VERSION"), v.libwebp, v.libaom, v.jxl_mini_encoder)).unwrap_or_default()
         };
     }
     V.with(|v| v.as_ptr())

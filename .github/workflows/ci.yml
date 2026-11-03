@@ -95,7 +95,7 @@ jobs:
     container: debian:bookworm
     env:
       # sccache wraps rustc and the C/C++ compilers CMake invokes for
-      # libaom / libjxl (CMake reads CMAKE_<LANG>_COMPILER_LAUNCHER from
+      # libaom (CMake reads CMAKE_<LANG>_COMPILER_LAUNCHER from
       # the environment), so both the test build and the addon build, and
       # later runs, reuse the same object files.
       SCCACHE_GHA_ENABLED: "true"
@@ -142,8 +142,8 @@ jobs:
           path: imgconv-rs.${{ matrix.triple }}.node
           if-no-files-found: error
 
-  # WebAssembly (wasm32-unknown-emscripten): the whole crate plus libaom and
-  # libjxl, without SIMD and threads.
+  # WebAssembly (wasm32-unknown-emscripten): the whole crate plus libaom,
+  # without SIMD and threads (jxl-mini-encoder is pure Rust).
   wasm:
     needs: config
     runs-on: ubuntu-24.04

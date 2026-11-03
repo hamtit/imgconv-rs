@@ -7,7 +7,6 @@ pub mod decode;
 pub mod encode;
 pub mod error;
 pub mod image;
-pub mod jxl;
 pub mod memory;
 pub mod orient;
 pub mod probe;
