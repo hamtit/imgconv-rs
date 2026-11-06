@@ -33,7 +33,7 @@ pub struct ConvertOptions {
     pub effort: Option<u32>,
     /// Pixel limit checked from the header before decoding (default 268402689).
     pub max_pixels: Option<f64>,
-    /// Convert animated GIFs to animated WebP regardless of `format` (default true).
+    /// Convert animated GIFs to animations: animated JPEG XL for `jxl`, animated WebP otherwise (default true).
     pub animated: Option<bool>,
     /// Encoder threads for this conversion (default 1).
     pub threads: Option<u32>,
@@ -55,7 +55,7 @@ pub struct ConvertResult {
     pub format: String,
     pub width: u32,
     pub height: u32,
-    /// More than 1 only for animated WebP.
+    /// More than 1 only for animations.
     pub frames: u32,
     pub input: ImageInfo,
 }

@@ -640,8 +640,8 @@ dependencies = [
 
 [[package]]
 name = "jxl-mini-encoder"
-version = "0.2.0"
-source = "git+https://github.com/hamtit/jxl-mini-encoder?tag=v0.2.0#7a36d77aa966d8b1f9d5bc2c311e79f45e61e77c"
+version = "0.3.0"
+source = "git+https://github.com/hamtit/jxl-mini-encoder?tag=v0.3.0#f9d4024c56e58afc368b0f8c5e220e57eeda27a8"
 
 [[package]]
 name = "jxl-modular"
