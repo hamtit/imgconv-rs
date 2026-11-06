@@ -23,7 +23,7 @@ sharp (libvips) は汎用の画像処理ライブラリだが、Web 配信用の
 |---|---|---|---|
 | WebP エンコード・デコード | libwebp (`libwebp-sys`) | 1.6.0 | sharp と同じ版。libvips と同じ設定 (preset default、method 4、alpha_quality 100) にしており、同じ画素からは**同一バイト列**を出力する |
 | AVIF エンコード・デコード | libaom (ソースからビルド) | 3.15.1 | sharp と同じ版。libheif 1.23 が libaom に渡す設定 (all-intra、speed = 9 - effort、tune IQ、quality 90 未満は 4:2:0 (libvips の規則。sharp は既定で 4:4:4 に上書きしているが、ここでは合わせない)、BT.601 full range、auto tiles など) を再現 |
-| JPEG XL エンコード | [jxl-mini-encoder](https://github.com/hamtit/jxl-mini-encoder) (純 Rust、git タグで固定) | 0.2.0 | libjxl 0.12.0 の代わり。effort 7、quality → distance の変換は libjxl と同じ。libjxl との違いは [libjxl を使っていないことによる差](#libjxl-を使っていないことによる差) |
+| JPEG XL エンコード | [jxl-mini-encoder](https://github.com/hamtit/jxl-mini-encoder) (純 Rust、git タグで固定) | 0.3.0 | libjxl 0.12.0 の代わり。effort 7、quality → distance の変換は libjxl と同じ。libjxl との違いは [libjxl を使っていないことによる差](#libjxl-を使っていないことによる差) |
 | JPEG デコード | mozjpeg (`mozjpeg-sys` 2.2) | | sharp と同じく mozjpeg (libjpeg-turbo 系の SIMD デコーダー) |
 | PNG / GIF デコード | `png` / `gif` クレート | | Rust 実装 |
 | 縮小 | `fast_image_resize` | 6 | SIMD (AVX2 / NEON) の Lanczos3 |
