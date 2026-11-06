@@ -102,8 +102,8 @@ jobs:
       - name: Install build tools
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends build-essential cmake nasm clang libclang-dev \
-            curl ca-certificates git python3 pkg-config unzip
+          apt-get install -y --no-install-recommends build-essential nasm \
+            curl ca-certificates git python3 unzip
           curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v4

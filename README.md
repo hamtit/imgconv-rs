@@ -50,7 +50,7 @@ await convertRgba(rgba, width, height, { format: 'webp' }); // ICO から取り�
 
 ## ビルド
 
-Linux (glibc / musl、x64 / arm64) 向け。必要なもの: Rust、CMake、C/C++ コンパイラー、clang (bindgen 用)、nasm (x64)、curl。
+Linux (glibc / musl、x64 / arm64) 向け。必要なもの: Rust、C コンパイラー、nasm (x64。無いと mozjpeg の SIMD デコードが無効になる)。
 
 ```bash
 ./scripts/build.sh

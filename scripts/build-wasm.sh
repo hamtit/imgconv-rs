@@ -13,7 +13,7 @@ cd "$here"
 
 # One exception / setjmp model everywhere: rustc uses WebAssembly exceptions,
 # so the C and C++ code (mozjpeg, libwebp) is
-# compiled for it too. The cc crate and cmake-rs pick these variables up.
+# compiled for it too. The cc crate picks these variables up.
 export CFLAGS_wasm32_unknown_emscripten="-fwasm-exceptions"
 export CXXFLAGS_wasm32_unknown_emscripten="-fwasm-exceptions"
 rm -rf "$out"
