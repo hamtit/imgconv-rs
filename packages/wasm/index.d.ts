@@ -40,7 +40,7 @@ export interface Imgconv {
   convert(input: Uint8Array, options: ConvertOptions): ConvertResult;
   convertRgba(rgba: Uint8Array, width: number, height: number, options: ConvertOptions): ConvertResult;
   probe(input: Uint8Array): ImageInfo;
-  versions(): { imgconvRs: string; libwebp: string; libaom: string; jxlMiniEncoder: string };
+  versions(): { imgconvRs: string; libwebp: string; avifMiniEncoder: string; jxlMiniEncoder: string };
 }
 
 export interface ImgconvModuleOptions {

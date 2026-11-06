@@ -24,7 +24,7 @@ async function pixel(buf: Buffer, x: number, y: number) {
 
 describe('versions', () => {
   test('reports the bundled codec versions', () => {
-    expect(versions()).toEqual({ imgconvRs: cargoVersion, libwebp: '1.6.0', libaom: 'v3.15.1', jxlMiniEncoder: '0.3.0' });
+    expect(versions()).toEqual({ imgconvRs: cargoVersion, libwebp: '1.6.0', avifMiniEncoder: '0.1.1', jxlMiniEncoder: '0.3.0' });
   });
 });
 

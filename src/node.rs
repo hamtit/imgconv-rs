@@ -157,7 +157,7 @@ pub fn probe(input: Buffer) -> Result<ImageInfo> {
 pub struct Versions {
     pub imgconv_rs: String,
     pub libwebp: String,
-    pub libaom: String,
+    pub avif_mini_encoder: String,
     pub jxl_mini_encoder: String,
 }
 
@@ -167,7 +167,7 @@ pub fn versions() -> Versions {
     Versions {
         imgconv_rs: env!("CARGO_PKG_VERSION").into(),
         libwebp: v.libwebp,
-        libaom: v.libaom,
+        avif_mini_encoder: v.avif_mini_encoder,
         jxl_mini_encoder: v.jxl_mini_encoder,
     }
 }

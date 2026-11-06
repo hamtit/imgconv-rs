@@ -22,7 +22,7 @@ sharp (libvips) は汎用の画像処理ライブラリだが、Web 配信用の
 | 処理 | ライブラリ | 版 | sharp 0.35.5 との関係 |
 |---|---|---|---|
 | WebP エンコード・デコード | libwebp (`libwebp-sys`) | 1.6.0 | sharp と同じ版。libvips と同じ設定 (preset default、method 4、alpha_quality 100) にしており、同じ画素からは**同一バイト列**を出力する |
-| AVIF エンコード | libaom (ソースからビルド) | 3.15.1 | sharp と同じ版。libheif 1.23 が libaom に渡す設定 (all-intra、speed = 9 - effort、tune IQ、quality 90 未満は 4:2:0 (libvips の規則。sharp は既定で 4:4:4 に上書きしているが、ここでは合わせない)、BT.601 full range、auto tiles など) を再現 |
+| AVIF エンコード | [avif-mini-encoder](https://github.com/hamtit/avif-mini-encoder) (純 Rust、git のリビジョンで固定) | 0.1.1 | libaom 3.15.1 の代わり。libheif 1.23 が libaom に渡す設定 (all-intra、speed = 9 - effort、tune IQ、quality 90 未満は 4:2:0 (libvips の規則。sharp は既定で 4:4:4 に上書きしているが、ここでは合わせない)、BT.601 full range など) を参考にしている。出力は libaom と一致しない。1 タイルのみなので、幅 4096・面積 4096×2304 を超える画像はエラーになる |
 | JPEG XL エンコード | [jxl-mini-encoder](https://github.com/hamtit/jxl-mini-encoder) (純 Rust、git タグで固定) | 0.3.0 | libjxl 0.12.0 の代わり。effort 7、quality → distance の変換は libjxl と同じ。libjxl との違いは [libjxl を使っていないことによる差](#libjxl-を使っていないことによる差) |
 | JPEG デコード | mozjpeg (`mozjpeg-sys` 2.2) | | sharp と同じく mozjpeg (libjpeg-turbo 系の SIMD デコーダー) |
 | PNG / GIF デコード | `png` / `gif` クレート | | Rust 実装 |
@@ -56,7 +56,7 @@ Linux (glibc / musl、x64 / arm64) 向け。必要なもの: Rust、CMake、C/C+
 ./scripts/build.sh
 ```
 
-`scripts/fetch-deps.sh` が libaom のソースを `vendor/` に取得し (SHA-256 を検証)、`build.rs` が CMake で静的ライブラリとしてビルドして組み込む。JPEG XL は純 Rust の jxl-mini-encoder なので、C/C++ のビルドは要らない。できた `imgconv-rs.linux-<arch>-<libc>.node` を `index.js` が読み込む。
+AVIF と JPEG XL のエンコーダーは純 Rust (avif-mini-encoder、jxl-mini-encoder) で、libaom も CMake も要らない。できた `imgconv-rs.linux-<arch>-<libc>.node` を `index.js` が読み込む。
 
 ```bash
 bun install
@@ -131,7 +131,7 @@ sharp 0.35.5 を使った一般的な変換 (WebP / AVIF は sharp、JPEG XL は
 
 ### 結果の読み方
 
-- **速くなった理由**: エンコーダーは同じ (libwebp・libaom・libjxl の同じ版・同じ設定) なので、差は周辺から来ている。sharp は変換 1 枚ごとに libaom を CPU 数のスレッドで動かすため、10 並列だとスレッドが CPU 数を大きく超えて奪い合う。このライブラリは 1 枚 1 スレッドで、並列数は Node-API のスレッドプール (CPU 数) で決まる。JPEG XL は比較側では sharp で RGBA に展開してから Worker に転送するが、それがなくなった (Worker の起動や JavaScript ヒープも不要)
+- **速くなった理由**: (この測定は AVIF が libaom だった版のもの。avif-mini-encoder への切り替え後は未測定) エンコーダーは同じ (libwebp・libaom・libjxl の同じ版・同じ設定) なので、差は周辺から来ている。sharp は変換 1 枚ごとに libaom を CPU 数のスレッドで動かすため、10 並列だとスレッドが CPU 数を大きく超えて奪い合う。このライブラリは 1 枚 1 スレッドで、並列数は Node-API のスレッドプール (CPU 数) で決まる。JPEG XL は比較側では sharp で RGBA に展開してから Worker に転送するが、それがなくなった (Worker の起動や JavaScript ヒープも不要)
 - **メモリが減った理由**: 並列で同時に動くエンコードの数が CPU 数に抑えられることと、libvips の常駐分・キャッシュがないこと。変換後の RSS が大きく下がるのは、変換が 1 つも動いていないときに `malloc_trim(0)` で解放済みのメモリを OS に返しているため (sharp の場合は glibc の arena にピークのまま残る)
 - **WebP**: 同じ画素からは sharp と同一のバイト列になる。画質の差は縮小処理の差。320px での差は、sharp (libvips) の縮小がこの基準よりわずかにぼけるため
 - **AVIF**: sharp は `chromaSubsampling` の既定を 4:4:4 にしている (libvips 自体の既定は quality 90 未満で 4:2:0)。このライブラリは libvips の規則どおり 4:2:0 にしているので、縮小しない大きい画像では色差の分だけ sharp より約 1 点低く、ファイルは 1.5% 小さい。サムネイルでは縮小の差のほうが大きく、このライブラリが上回る
@@ -159,4 +159,4 @@ JPEG XL のエンコーダーを libjxl 0.12.0 から jxl-mini-encoder 0.1.0 に
 
 ## ライセンス
 
-MIT ([LICENSE](LICENSE))。静的に組み込む libwebp・libaom・mozjpeg などのライセンスは、リリースの tarball の `licenses/` に含まれる。
+MIT ([LICENSE](LICENSE))。静的に組み込む libwebp・mozjpeg などのライセンスは、リリースの tarball の `licenses/` に含まれる。

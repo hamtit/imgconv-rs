@@ -105,8 +105,8 @@ export default async function createImgconv(moduleOptions) {
       }
     },
     versions() {
-      const [imgconvRs, libwebp, libaom, jxlMiniEncoder] = m.UTF8ToString(m._imgconv_versions()).split('\n');
-      return { imgconvRs, libwebp, libaom, jxlMiniEncoder };
+      const [imgconvRs, libwebp, avifMiniEncoder, jxlMiniEncoder] = m.UTF8ToString(m._imgconv_versions()).split('\n');
+      return { imgconvRs, libwebp, avifMiniEncoder, jxlMiniEncoder };
     },
   };
 }

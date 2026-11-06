@@ -50,4 +50,4 @@ export function convertRgba(
 ): Promise<ConvertResult>;
 /** Read format, size and frame count from the header without decoding pixels. */
 export function probe(input: Buffer | Uint8Array): ImageInfo;
-export function versions(): { imgconvRs: string; libwebp: string; libaom: string; jxlMiniEncoder: string };
+export function versions(): { imgconvRs: string; libwebp: string; avifMiniEncoder: string; jxlMiniEncoder: string };

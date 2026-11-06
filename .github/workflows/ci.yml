@@ -94,14 +94,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     container: debian:bookworm
     env:
-      # sccache wraps rustc and the C/C++ compilers CMake invokes for
-      # libaom (CMake reads CMAKE_<LANG>_COMPILER_LAUNCHER from
-      # the environment), so both the test build and the addon build, and
-      # later runs, reuse the same object files.
+      # sccache wraps rustc, so both the test build and the addon build, and
+      # later runs, reuse the same objects.
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: sccache
-      CMAKE_C_COMPILER_LAUNCHER: sccache
-      CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
       - name: Install build tools
         run: |
@@ -115,14 +111,12 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.4
-      - name: Fetch codec sources
-        run: ./scripts/fetch-deps.sh
       - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             target
-          key: ${{ matrix.triple }}-${{ hashFiles('Cargo.lock', 'vendor/*/.version', 'build.rs') }}
+          key: ${{ matrix.triple }}-${{ hashFiles('Cargo.lock', 'build.rs') }}
           restore-keys: |
             ${{ matrix.triple }}-
       - name: Rust unit tests
@@ -142,16 +136,14 @@ jobs:
           path: imgconv-rs.${{ matrix.triple }}.node
           if-no-files-found: error
 
-  # WebAssembly (wasm32-unknown-emscripten): the whole crate plus libaom,
-  # without SIMD and threads (jxl-mini-encoder is pure Rust).
+  # WebAssembly (wasm32-unknown-emscripten): the whole crate,
+  # without SIMD and threads.
   wasm:
     needs: config
     runs-on: ubuntu-24.04
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: sccache
-      CMAKE_C_COMPILER_LAUNCHER: sccache
-      CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
       - uses: actions/checkout@v4
         with:
@@ -209,9 +201,7 @@ jobs:
           name: wasm
           path: out/wasm
       - name: Collect licenses
-        run: |
-          ./scripts/fetch-deps.sh
-          ./scripts/collect-licenses.sh
+        run: ./scripts/collect-licenses.sh
       - name: Pack
         run: |
           node scripts/pack.mjs native dist out/imgconv-rs.linux-x64-gnu.node out/imgconv-rs.linux-arm64-gnu.node
