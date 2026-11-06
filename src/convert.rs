@@ -149,8 +149,8 @@ fn convert_animated_gif_jxl(buf: &[u8], info: &Info, opts: &Options) -> Result<O
         delays.push(frame.delay_ms / 10);
     }
     let effort = opts.effort.unwrap_or(OutputFormat::Jxl.default_effort());
-    let data = jxl::encode_animation(&canvases, &delays, w, h, opts.quality, effort, opts.threads)?;
-    Ok(Output { data, format: OutputFormat::Jxl, width: w, height: h, frames: canvases.len() as u32, input: *info })
+    let data = jxl::encode_animation(canvases, &delays, w, h, opts.quality, effort, opts.threads)?;
+    Ok(Output { data, format: OutputFormat::Jxl, width: w, height: h, frames: delays.len() as u32, input: *info })
 }
 
 fn convert_animated_gif(buf: &[u8], info: &Info, opts: &Options) -> Result<Output> {

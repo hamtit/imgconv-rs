@@ -554,8 +554,8 @@ dependencies = [
 
 [[package]]
 name = "jxl-mini-encoder"
-version = "0.3.0"
-source = "git+https://github.com/hamtit/jxl-mini-encoder?tag=v0.3.0#f9d4024c56e58afc368b0f8c5e220e57eeda27a8"
+version = "0.4.0"
+source = "git+https://github.com/hamtit/jxl-mini-encoder?rev=0c042bbe5aee49f253fd0eee9e59b34d80a481da#0c042bbe5aee49f253fd0eee9e59b34d80a481da"
 
 [[package]]
 name = "jxl-modular"
