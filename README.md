@@ -8,7 +8,7 @@ sharp (libvips) は汎用の画像処理ライブラリだが、Web 配信用の
 
 | | 対応 |
 |---|---|
-| 入力 | JPEG (CMYK を含む)、PNG (16bit・パレット・APNG の先頭フレーム)、GIF、WebP (アニメーションは先頭フレーム)、AVIF、SVG |
+| 入力 | JPEG (CMYK を含む)、PNG (16bit・パレット・APNG の先頭フレーム)、GIF、WebP (アニメーションは先頭フレーム)、SVG |
 | 出力 | WebP、AVIF、JPEG XL (`quality: 100` で可逆)。複数フレームの GIF はアニメーションになる (JPEG XL ならアニメーション JPEG XL、それ以外はアニメーション WebP) |
 | 縮小 | sharp の `fit: 'inside', withoutEnlargement: true` と同じ寸法。Lanczos3、アルファは乗算済みで処理。JPEG は sharp と同じ規則で DCT 縮小デコード (shrink-on-load)、WebP は libwebp のスケーラーで 2 の累乗まで縮小してからデコード、SVG は目標サイズで直接ラスタライズ。PNG と、DCT 縮小でも目標に届かない JPEG は、行を読みながら縮小する (展開した元の大きさの画素列はメモリに置かない。プログレッシブ JPEG は libjpeg が係数を全体ぶん持つので、その分は減らない。結果は一括の縮小と同じ) |
 | 色 | 埋め込み ICC プロファイルを sRGB に変換してから出力 (sharp と同じ)。完全に不透明なアルファチャンネルは捨てる |
@@ -22,7 +22,7 @@ sharp (libvips) は汎用の画像処理ライブラリだが、Web 配信用の
 | 処理 | ライブラリ | 版 | sharp 0.35.5 との関係 |
 |---|---|---|---|
 | WebP エンコード・デコード | libwebp (`libwebp-sys`) | 1.6.0 | sharp と同じ版。libvips と同じ設定 (preset default、method 4、alpha_quality 100) にしており、同じ画素からは**同一バイト列**を出力する |
-| AVIF エンコード・デコード | libaom (ソースからビルド) | 3.15.1 | sharp と同じ版。libheif 1.23 が libaom に渡す設定 (all-intra、speed = 9 - effort、tune IQ、quality 90 未満は 4:2:0 (libvips の規則。sharp は既定で 4:4:4 に上書きしているが、ここでは合わせない)、BT.601 full range、auto tiles など) を再現 |
+| AVIF エンコード | libaom (ソースからビルド) | 3.15.1 | sharp と同じ版。libheif 1.23 が libaom に渡す設定 (all-intra、speed = 9 - effort、tune IQ、quality 90 未満は 4:2:0 (libvips の規則。sharp は既定で 4:4:4 に上書きしているが、ここでは合わせない)、BT.601 full range、auto tiles など) を再現 |
 | JPEG XL エンコード | [jxl-mini-encoder](https://github.com/hamtit/jxl-mini-encoder) (純 Rust、git タグで固定) | 0.3.0 | libjxl 0.12.0 の代わり。effort 7、quality → distance の変換は libjxl と同じ。libjxl との違いは [libjxl を使っていないことによる差](#libjxl-を使っていないことによる差) |
 | JPEG デコード | mozjpeg (`mozjpeg-sys` 2.2) | | sharp と同じく mozjpeg (libjpeg-turbo 系の SIMD デコーダー) |
 | PNG / GIF デコード | `png` / `gif` クレート | | Rust 実装 |

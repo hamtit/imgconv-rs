@@ -92,7 +92,7 @@ fn build_aom() {
         .define("ENABLE_TOOLS", "0")
         .define("ENABLE_NASM", "1")
         .define("CONFIG_AV1_ENCODER", "1")
-        .define("CONFIG_AV1_DECODER", "1")
+        .define("CONFIG_AV1_DECODER", "0")
         .define("CONFIG_PIC", "1")
         .define("CMAKE_POSITION_INDEPENDENT_CODE", "ON")
         .define("CMAKE_INSTALL_LIBDIR", "lib");
@@ -120,11 +120,11 @@ fn build_aom() {
     let bindings = builder
         .header_contents(
             "aom_wrap.h",
-            "#include <aom/aom_encoder.h>\n#include <aom/aomcx.h>\n#include <aom/aom_decoder.h>\n#include <aom/aomdx.h>\n",
+            "#include <aom/aom_encoder.h>\n#include <aom/aomcx.h>\n",
         )
         .clang_arg(format!("-I{}", include.display()))
         .allowlist_function("aom_.*")
-        .allowlist_type("aom_.*|aome_.*|aomd_.*|av1_.*|aom_codec_control_type_.*")
+        .allowlist_type("aom_.*|aome_.*|av1_.*|aom_codec_control_type_.*")
         .allowlist_var("AOM_.*|AV1E_.*|AOME_.*|AV1_.*")
         .default_enum_style(bindgen::EnumVariation::Consts)
         .layout_tests(false)

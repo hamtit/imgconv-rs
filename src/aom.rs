@@ -23,14 +23,3 @@ pub fn error_detail(ctx: *mut sys::aom_codec_ctx_t) -> String {
         s
     }
 }
-
-/// YCbCr luma coefficients (Kr, Kb) for an AV1/H.273 matrix_coefficients value.
-pub fn luma_coefficients(mc: u32) -> (f32, f32) {
-    match mc {
-        1 => (0.2126, 0.0722),        // BT.709
-        9 | 10 => (0.2627, 0.0593),   // BT.2020
-        4 => (0.30, 0.11),            // FCC
-        7 => (0.212, 0.087),          // SMPTE 240M
-        _ => (0.299, 0.114),          // BT.601 (5, 6) and unspecified
-    }
-}

@@ -1,5 +1,5 @@
 export type OutputFormat = 'webp' | 'avif' | 'jxl';
-export type InputFormat = 'jpeg' | 'png' | 'gif' | 'webp' | 'avif' | 'svg';
+export type InputFormat = 'jpeg' | 'png' | 'gif' | 'webp' | 'svg';
 
 export interface ConvertOptions {
   format: OutputFormat;

@@ -21,7 +21,6 @@ png = "0.18"
 gif = "0.14"
 libwebp-sys = "0.14"
 avif-serialize = "0.8"
-avif-parse = "2"
 fast_image_resize = "6"
 moxcms = "0.9"
 resvg = { version = "0.49", default-features = false, features = ["raster-images"] }

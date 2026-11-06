@@ -1,7 +1,6 @@
 //! Still-image decoders. Each returns sRGB-ready 8-bit pixels plus the
 //! metadata the pipeline needs (embedded ICC profile, EXIF orientation).
 
-pub mod avif;
 pub mod gif;
 pub mod jpeg;
 pub mod png;

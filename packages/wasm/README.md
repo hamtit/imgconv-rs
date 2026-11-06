@@ -1,7 +1,7 @@
 # imgconv-rs-wasm
 
 [imgconv-rs](https://github.com/hamtit/imgconv-rs) compiled to WebAssembly
-(Emscripten): decode (JPEG, PNG, GIF, WebP, AVIF, SVG), resize, orient and
+(Emscripten): decode (JPEG, PNG, GIF, WebP, SVG), resize, orient and
 encode to WebP / AVIF / JPEG XL in one call. Same options and results as the
 Node-API addon, but synchronous, single-threaded and without SIMD.
 

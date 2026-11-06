@@ -100,7 +100,6 @@ fn prepare_still(buf: &[u8], info: &Info, max_dimension: Option<u32>) -> Result<
         Format::Webp => decode::webp::decode(buf, shrink(stored_target))?,
         Format::Png => decode::png::decode(buf, stored_target)?,
         Format::Gif => Decoded::plain(decode::gif::decode_first(buf)?),
-        Format::Avif => decode::avif::decode(buf)?,
         // Rendered straight at the target size.
         Format::Svg => Decoded::plain(decode::svg::decode(buf, stored_target)?),
     };

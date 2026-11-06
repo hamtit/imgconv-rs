@@ -22,7 +22,7 @@ fn set_error(msg: &str) {
 }
 
 /// Input format names, indexed by the codes in the result.
-pub const INPUT_FORMATS: [&str; 6] = ["jpeg", "png", "gif", "webp", "avif", "svg"];
+pub const INPUT_FORMATS: [&str; 5] = ["jpeg", "png", "gif", "webp", "svg"];
 
 fn input_code(f: Format) -> u32 {
     match f {
@@ -30,8 +30,7 @@ fn input_code(f: Format) -> u32 {
         Format::Png => 1,
         Format::Gif => 2,
         Format::Webp => 3,
-        Format::Avif => 4,
-        Format::Svg => 5,
+        Format::Svg => 4,
     }
 }
 
