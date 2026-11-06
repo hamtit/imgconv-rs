@@ -59,7 +59,7 @@ const { rgba, png } = image(96, 64);
 const versions = imgconv.versions();
 console.log(versions);
 assert.equal(versions.libwebp, '1.6.0');
-assert.equal(versions.jxlMiniEncoder, '0.2.0');
+assert.equal(versions.jxlMiniEncoder, '0.3.0');
 
 assert.deepEqual(imgconv.probe(png), { format: 'png', width: 96, height: 64, frames: 1, orientation: 1 });
 assert.throws(() => imgconv.probe(new TextEncoder().encode('<html></html>')), /Unsupported image format/);

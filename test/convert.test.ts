@@ -24,7 +24,7 @@ async function pixel(buf: Buffer, x: number, y: number) {
 
 describe('versions', () => {
   test('reports the bundled codec versions', () => {
-    expect(versions()).toEqual({ imgconvRs: cargoVersion, libwebp: '1.6.0', libaom: 'v3.15.1', jxlMiniEncoder: '0.2.0' });
+    expect(versions()).toEqual({ imgconvRs: cargoVersion, libwebp: '1.6.0', libaom: 'v3.15.1', jxlMiniEncoder: '0.3.0' });
   });
 });
 
@@ -127,14 +127,18 @@ describe('convert', () => {
     const gif = await sharp(raw, { raw: { width: 200, height: 100 * frames, channels: 4, pageHeight: 100 } })
       .gif({ delay: Array(frames).fill(70), loop: 0 }).toBuffer();
     expect(probe(gif)).toMatchObject({ format: 'gif', frames });
-    for (const format of ['avif', 'jxl'] as const) {
-      const r = await convert(gif, { format, maxDimension: 100 });
+    {
+      const r = await convert(gif, { format: 'avif', maxDimension: 100 });
       expect(r).toMatchObject({ format: 'webp', frames, width: 100, height: 50 });
       const meta = await sharp(r.data, { animated: true }).metadata();
       expect(meta.pages).toBe(frames);
       expect(meta.delay).toEqual(Array(frames).fill(70));
       expect(meta.loop).toBe(0);
     }
+    // JPEG XL gets an animated JPEG XL with every frame.
+    const jxl = await convert(gif, { format: 'jxl', maxDimension: 100 });
+    expect(jxl).toMatchObject({ format: 'jxl', frames, width: 100, height: 50 });
+    expect(jxl.data[0] === 0xff && jxl.data[1] === 0x0a).toBe(true);
     // A single-frame GIF goes to the requested still format.
     const still = await sharp(raw.subarray(0, 200 * 100 * 4), { raw: { width: 200, height: 100, channels: 4 } }).gif().toBuffer();
     expect((await convert(still, { format: 'avif' })).format).toBe('avif');

@@ -22,7 +22,7 @@ pub fn encode(img: &Image, quality: f32, effort: u32, threads: u32) -> Result<Ve
 }
 
 /// Encode composited RGBA canvases as an animated JPEG XL (loops forever).
-/// `delays_cs` are GIF delays in 1/100 s, one per frame; 0 becomes 10 as in browsers.
+/// `delays_cs` are GIF delays in 1/100 s, one per frame; <= 1 becomes 10 as in browsers and the WebP path.
 pub fn encode_animation(
     frames: &[Vec<u8>],
     delays_cs: &[u32],
@@ -48,7 +48,7 @@ pub fn encode_animation(
             jxl_mini_encoder::ImageRef::rgba8(width, height, data)
         }
         .map_err(|e| Error(format!("jxl: {e}")))?;
-        list.push(jxl_mini_encoder::AnimationFrame { image, duration: if cs == 0 { 10 } else { cs } });
+        list.push(jxl_mini_encoder::AnimationFrame { image, duration: if cs <= 1 { 10 } else { cs } });
     }
     jxl_mini_encoder::Encoder::new()
         .quality(quality.clamp(0.0, 100.0))
