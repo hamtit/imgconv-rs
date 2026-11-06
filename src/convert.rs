@@ -1,6 +1,6 @@
 //! The conversion pipeline: probe → (pixel limit) → decode with
 //! shrink-on-load → Lanczos3 fit-inside resize → EXIF orientation → sRGB →
-//! encode. Animated GIFs become animated WebP, frame by frame.
+//! encode. Animated GIFs become animated JPEG XL (for `jxl`) or animated WebP, frame by frame.
 
 use crate::decode::{self, Decoded, gif::GifFrames, shrink_on_load};
 use crate::encode::{avif, jxl, webp};
@@ -56,7 +56,7 @@ pub struct Options {
     pub max_dimension: Option<u32>,
     pub effort: Option<u32>,
     pub max_pixels: u64,
-    /// Convert animated GIFs to animated WebP (whatever `format` is).
+    /// Convert animated GIFs to animations: JPEG XL for `jxl`, otherwise animated WebP.
     pub animated: bool,
     /// Encoder threads for one conversion (AVIF / JPEG XL).
     pub threads: u32,
@@ -133,6 +133,27 @@ fn encode_still(image: Image, opts: &Options) -> Result<Vec<u8>> {
     }
 }
 
+fn convert_animated_gif_jxl(buf: &[u8], info: &Info, opts: &Options) -> Result<Output> {
+    let mut frames = GifFrames::new(buf)?;
+    let target = opts.max_dimension.and_then(|m| resize::fit_inside(frames.width, frames.height, m));
+    let (w, h) = target.unwrap_or((frames.width, frames.height));
+    let (cw, ch) = (frames.width, frames.height);
+    let (mut canvases, mut delays) = (Vec::new(), Vec::new());
+    let mut first = true;
+    while let Some(frame) = frames.next_frame(first)? {
+        first = false;
+        let canvas = ImageView { width: cw, height: ch, channels: 4, data: frame.rgba };
+        canvases.push(match target {
+            Some((tw, th)) => resize::resize(&canvas, tw, th)?.data,
+            None => frame.rgba.to_vec(),
+        });
+        delays.push(frame.delay_ms / 10);
+    }
+    let effort = opts.effort.unwrap_or(OutputFormat::Jxl.default_effort());
+    let data = jxl::encode_animation(&canvases, &delays, w, h, opts.quality, effort, opts.threads)?;
+    Ok(Output { data, format: OutputFormat::Jxl, width: w, height: h, frames: canvases.len() as u32, input: *info })
+}
+
 fn convert_animated_gif(buf: &[u8], info: &Info, opts: &Options) -> Result<Output> {
     let mut frames = GifFrames::new(buf)?;
     let target = opts.max_dimension.and_then(|m| resize::fit_inside(frames.width, frames.height, m));
@@ -181,6 +202,9 @@ pub fn convert(buf: &[u8], opts: &Options) -> Result<Output> {
         }
         if info.format == Format::Gif && info.frames > 1 && opts.animated {
             check_pixels(info.width, info.height, info.frames, opts.max_pixels)?;
+            if opts.format == OutputFormat::Jxl {
+                return convert_animated_gif_jxl(buf, &info, opts);
+            }
             return convert_animated_gif(buf, &info, opts);
         }
         let image = prepare_still(buf, &info, opts.max_dimension)?;

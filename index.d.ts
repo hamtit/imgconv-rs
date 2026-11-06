@@ -11,7 +11,7 @@ export interface ConvertOptions {
   effort?: number;
   /** Pixel limit checked from the header before decoding (default 268402689, sharp's default). */
   maxPixels?: number;
-  /** Convert animated GIFs to animated WebP regardless of `format` (default true). */
+  /** Convert animated GIFs to animations: animated JPEG XL for `jxl`, animated WebP otherwise (default true). */
   animated?: boolean;
   /** Encoder threads for this conversion (default 1). */
   threads?: number;
@@ -33,7 +33,7 @@ export interface ConvertResult {
   format: OutputFormat;
   width: number;
   height: number;
-  /** More than 1 only for animated WebP. */
+  /** More than 1 only for animations. */
   frames: number;
   input: ImageInfo;
 }

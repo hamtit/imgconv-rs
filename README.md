@@ -9,7 +9,7 @@ sharp (libvips) は汎用の画像処理ライブラリだが、Web 配信用の
 | | 対応 |
 |---|---|
 | 入力 | JPEG (CMYK を含む)、PNG (16bit・パレット・APNG の先頭フレーム)、GIF、WebP (アニメーションは先頭フレーム)、AVIF、SVG |
-| 出力 | WebP、AVIF、JPEG XL (`quality: 100` で可逆)。複数フレームの GIF は出力形式に関わらずアニメーション WebP |
+| 出力 | WebP、AVIF、JPEG XL (`quality: 100` で可逆)。複数フレームの GIF はアニメーションになる (JPEG XL ならアニメーション JPEG XL、それ以外はアニメーション WebP) |
 | 縮小 | sharp の `fit: 'inside', withoutEnlargement: true` と同じ寸法。Lanczos3、アルファは乗算済みで処理。JPEG は sharp と同じ規則で DCT 縮小デコード (shrink-on-load)、WebP は libwebp のスケーラーで 2 の累乗まで縮小してからデコード、SVG は目標サイズで直接ラスタライズ。PNG と、DCT 縮小でも目標に届かない JPEG は、行を読みながら縮小する (展開した元の大きさの画素列はメモリに置かない。プログレッシブ JPEG は libjpeg が係数を全体ぶん持つので、その分は減らない。結果は一括の縮小と同じ) |
 | 色 | 埋め込み ICC プロファイルを sRGB に変換してから出力 (sharp と同じ)。完全に不透明なアルファチャンネルは捨てる |
 | 向き | EXIF Orientation を適用して正立させる |
@@ -36,7 +36,7 @@ sharp (libvips) は汎用の画像処理ライブラリだが、Web 配信用の
 import { convert, convertRgba, probe } from 'imgconv-rs';
 
 const result = await convert(buffer, { format: 'avif', quality: 65, maxDimension: 320 });
-// result.data: Buffer, result.format: 'avif' (アニメーション GIF なら 'webp'),
+// result.data: Buffer, result.format: 'avif' (アニメーション GIF は 'jxl' 指定なら 'jxl'、それ以外は 'webp'),
 // result.width / result.height / result.frames, result.input: 入力のヘッダー情報
 
 probe(buffer); // { format: 'jpeg', width, height, frames, orientation } (画素はデコードしない)
