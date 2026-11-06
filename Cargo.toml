@@ -27,9 +27,8 @@ fast_image_resize = "6"
 moxcms = "0.9"
 resvg = { version = "0.49", default-features = false, features = ["raster-images"] }
 libc = "0.2"
-# Pure-Rust JPEG XL encoder (replaces libjxl). Not on crates.io, so pinned by revision
-# (v0.4.0 branch commit; switch to `tag = "v0.4.0"` once that release exists).
-jxl-mini-encoder = { git = "https://github.com/hamtit/jxl-mini-encoder", rev = "0c042bbe5aee49f253fd0eee9e59b34d80a481da" }
+# Pure-Rust JPEG XL encoder (replaces libjxl). Not on crates.io, so pinned by tag.
+jxl-mini-encoder = { git = "https://github.com/hamtit/jxl-mini-encoder", tag = "v0.4.0" }
 
 [build-dependencies]
 napi-build = "2"
