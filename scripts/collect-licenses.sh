@@ -1,6 +1,6 @@
 #!/bin/sh
 # Copy the license files of everything linked into the addon (Rust crates,
-# including the C libraries they bundle, and libaom) into licenses/.
+# including the C libraries they bundle) into licenses/.
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
@@ -37,7 +37,4 @@ while IFS="$(printf '\t')" read -r name version license dir; do
   printf '%s %s: %s\n' "$name" "$version" "$license" >> licenses/SUMMARY.txt
 done < licenses/crates.tsv
 rm licenses/crates.tsv
-mkdir -p licenses/libaom-$(cat vendor/libaom/.version)
-cp vendor/libaom/LICENSE vendor/libaom/PATENTS licenses/libaom-$(cat vendor/libaom/.version)/
-echo "libaom $(cat vendor/libaom/.version): BSD-2-Clause + AOMedia Patent License 1.0" >> licenses/SUMMARY.txt
 echo "collected $(ls licenses | wc -l) entries"

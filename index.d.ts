@@ -1,5 +1,5 @@
 export type OutputFormat = 'webp' | 'avif' | 'jxl';
-export type InputFormat = 'jpeg' | 'png' | 'gif' | 'webp' | 'avif' | 'svg';
+export type InputFormat = 'jpeg' | 'png' | 'gif' | 'webp' | 'svg';
 
 export interface ConvertOptions {
   format: OutputFormat;
@@ -38,7 +38,7 @@ export interface ConvertResult {
   input: ImageInfo;
 }
 
-/** Convert an encoded image (JPEG, PNG, GIF, WebP, AVIF or SVG). Runs off the JS thread. */
+/** Convert an encoded image (JPEG, PNG, GIF, WebP or SVG). Runs off the JS thread. */
 export function convert(input: Buffer | Uint8Array, options: ConvertOptions, signal?: AbortSignal): Promise<ConvertResult>;
 /** Convert raw 8-bit RGBA pixels (straight alpha), e.g. a decoded ICO entry. */
 export function convertRgba(
@@ -50,4 +50,4 @@ export function convertRgba(
 ): Promise<ConvertResult>;
 /** Read format, size and frame count from the header without decoding pixels. */
 export function probe(input: Buffer | Uint8Array): ImageInfo;
-export function versions(): { imgconvRs: string; libwebp: string; libaom: string; jxlMiniEncoder: string };
+export function versions(): { imgconvRs: string; libwebp: string; avifMiniEncoder: string; jxlMiniEncoder: string };

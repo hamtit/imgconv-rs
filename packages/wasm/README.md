@@ -1,7 +1,7 @@
 # imgconv-rs-wasm
 
 [imgconv-rs](https://github.com/hamtit/imgconv-rs) compiled to WebAssembly
-(Emscripten): decode (JPEG, PNG, GIF, WebP, AVIF, SVG), resize, orient and
+(Emscripten): decode (JPEG, PNG, GIF, WebP, SVG), resize, orient and
 encode to WebP / AVIF / JPEG XL in one call. Same options and results as the
 Node-API addon, but synchronous, single-threaded and without SIMD.
 
@@ -17,7 +17,7 @@ import createImgconv from 'imgconv-rs-wasm';
 const imgconv = await createImgconv();
 const { data, width, height } = imgconv.convert(bytes, { format: 'webp', quality: 65, maxDimension: 320 });
 imgconv.probe(bytes); // { format, width, height, frames, orientation }
-imgconv.versions();   // { imgconvRs, libwebp, libaom, jxlMiniEncoder }
+imgconv.versions();   // { imgconvRs, libwebp, avifMiniEncoder, jxlMiniEncoder }
 ```
 
 The module is an ES module for browsers, workers and Node.js. Conversions

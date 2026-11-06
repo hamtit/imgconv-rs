@@ -22,7 +22,7 @@ fn set_error(msg: &str) {
 }
 
 /// Input format names, indexed by the codes in the result.
-pub const INPUT_FORMATS: [&str; 6] = ["jpeg", "png", "gif", "webp", "avif", "svg"];
+pub const INPUT_FORMATS: [&str; 5] = ["jpeg", "png", "gif", "webp", "svg"];
 
 fn input_code(f: Format) -> u32 {
     match f {
@@ -30,8 +30,7 @@ fn input_code(f: Format) -> u32 {
         Format::Png => 1,
         Format::Gif => 2,
         Format::Webp => 3,
-        Format::Avif => 4,
-        Format::Svg => 5,
+        Format::Svg => 4,
     }
 }
 
@@ -201,13 +200,13 @@ pub extern "C" fn imgconv_last_error() -> *const c_char {
     LAST_ERROR.with(|e| e.borrow().as_ptr())
 }
 
-/// `"<imgconv-rs>\n<libwebp>\n<libaom>\n<jxl-mini-encoder>"`, NUL-terminated and static.
+/// `"<imgconv-rs>\n<libwebp>\n<avif-mini-encoder>\n<jxl-mini-encoder>"`, NUL-terminated and static.
 #[unsafe(no_mangle)]
 pub extern "C" fn imgconv_versions() -> *const c_char {
     thread_local! {
         static V: CString = {
             let v = convert::versions();
-            CString::new(format!("{}\n{}\n{}\n{}", env!("CARGO_PKG_VERSION"), v.libwebp, v.libaom, v.jxl_mini_encoder)).unwrap_or_default()
+            CString::new(format!("{}\n{}\n{}\n{}", env!("CARGO_PKG_VERSION"), v.libwebp, v.avif_mini_encoder, v.jxl_mini_encoder)).unwrap_or_default()
         };
     }
     V.with(|v| v.as_ptr())

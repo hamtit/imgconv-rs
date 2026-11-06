@@ -6,7 +6,7 @@
 import createModule from './dist/imgconv.js';
 
 const OUTPUT = ['webp', 'avif', 'jxl'];
-const INPUT = ['jpeg', 'png', 'gif', 'webp', 'avif', 'svg'];
+const INPUT = ['jpeg', 'png', 'gif', 'webp', 'svg'];
 
 // WasmResult (src/wasm.rs): eleven u32 fields.
 const R = { dataPtr: 0, dataLen: 1, format: 2, width: 3, height: 4, frames: 5, inFormat: 6, inWidth: 7, inHeight: 8, inFrames: 9, inOrientation: 10 };
@@ -105,8 +105,8 @@ export default async function createImgconv(moduleOptions) {
       }
     },
     versions() {
-      const [imgconvRs, libwebp, libaom, jxlMiniEncoder] = m.UTF8ToString(m._imgconv_versions()).split('\n');
-      return { imgconvRs, libwebp, libaom, jxlMiniEncoder };
+      const [imgconvRs, libwebp, avifMiniEncoder, jxlMiniEncoder] = m.UTF8ToString(m._imgconv_versions()).split('\n');
+      return { imgconvRs, libwebp, avifMiniEncoder, jxlMiniEncoder };
     },
   };
 }

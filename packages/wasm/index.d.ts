@@ -1,5 +1,5 @@
 export type OutputFormat = 'webp' | 'avif' | 'jxl';
-export type InputFormat = 'jpeg' | 'png' | 'gif' | 'webp' | 'avif' | 'svg';
+export type InputFormat = 'jpeg' | 'png' | 'gif' | 'webp' | 'svg';
 
 export interface ConvertOptions {
   format: OutputFormat;
@@ -40,7 +40,7 @@ export interface Imgconv {
   convert(input: Uint8Array, options: ConvertOptions): ConvertResult;
   convertRgba(rgba: Uint8Array, width: number, height: number, options: ConvertOptions): ConvertResult;
   probe(input: Uint8Array): ImageInfo;
-  versions(): { imgconvRs: string; libwebp: string; libaom: string; jxlMiniEncoder: string };
+  versions(): { imgconvRs: string; libwebp: string; avifMiniEncoder: string; jxlMiniEncoder: string };
 }
 
 export interface ImgconvModuleOptions {

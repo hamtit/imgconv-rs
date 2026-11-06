@@ -10,7 +10,6 @@ pub enum Format {
     Png,
     Gif,
     Webp,
-    Avif,
     Svg,
 }
 
@@ -21,7 +20,6 @@ impl Format {
             Format::Png => "png",
             Format::Gif => "gif",
             Format::Webp => "webp",
-            Format::Avif => "avif",
             Format::Svg => "svg",
         }
     }
@@ -56,32 +54,10 @@ pub fn detect(buf: &[u8]) -> Option<Format> {
     if buf.len() >= 12 && &buf[0..4] == b"RIFF" && &buf[8..12] == b"WEBP" {
         return Some(Format::Webp);
     }
-    if is_avif(buf) {
-        return Some(Format::Avif);
-    }
     if looks_like_svg(buf) {
         return Some(Format::Svg);
     }
     None
-}
-
-fn is_avif(buf: &[u8]) -> bool {
-    if buf.len() < 16 || &buf[4..8] != b"ftyp" {
-        return false;
-    }
-    let size = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
-    let end = size.min(buf.len());
-    if end < 16 {
-        return false;
-    }
-    // major brand followed by minor version and compatible brands
-    let brands = std::iter::once(&buf[8..12]).chain(buf[16..end].chunks_exact(4));
-    for b in brands {
-        if b == b"avif" || b == b"avis" {
-            return true;
-        }
-    }
-    false
 }
 
 fn looks_like_svg(buf: &[u8]) -> bool {
@@ -119,10 +95,6 @@ pub fn probe(buf: &[u8]) -> Result<Info> {
         Format::Webp => {
             let (w, h, n) = crate::decode::webp::probe(buf)?;
             (w, h, n, 1)
-        }
-        Format::Avif => {
-            let (w, h) = crate::decode::avif::probe(buf)?;
-            (w, h, 1, 1)
         }
         Format::Svg => {
             let (w, h) = crate::decode::svg::probe(buf)?;
@@ -247,7 +219,7 @@ mod tests {
         assert_eq!(detect(b"\x89PNG\r\n\x1a\n...."), Some(Format::Png));
         assert_eq!(detect(b"GIF89a"), Some(Format::Gif));
         assert_eq!(detect(b"RIFF\0\0\0\0WEBPVP8 "), Some(Format::Webp));
-        assert_eq!(detect(b"\0\0\0\x1cftypavif\0\0\0\0avifmif1miaf"), Some(Format::Avif));
+        assert_eq!(detect(b"\0\0\0\x1cftypavif\0\0\0\0avifmif1miaf"), None);
         assert_eq!(detect(b"\0\0\0\x18ftypheic\0\0\0\0mif1heic"), None);
         assert_eq!(detect(b"  <?xml version=\"1.0\"?><svg xmlns=\"\"/>"), Some(Format::Svg));
         assert_eq!(detect(b"<html>"), None);

@@ -100,7 +100,6 @@ fn prepare_still(buf: &[u8], info: &Info, max_dimension: Option<u32>) -> Result<
         Format::Webp => decode::webp::decode(buf, shrink(stored_target))?,
         Format::Png => decode::png::decode(buf, stored_target)?,
         Format::Gif => Decoded::plain(decode::gif::decode_first(buf)?),
-        Format::Avif => decode::avif::decode(buf)?,
         // Rendered straight at the target size.
         Format::Svg => Decoded::plain(decode::svg::decode(buf, stored_target)?),
     };
@@ -249,12 +248,12 @@ pub fn convert_rgba(rgba: &[u8], width: u32, height: u32, opts: &Options) -> Res
 
 pub struct Versions {
     pub libwebp: String,
-    pub libaom: String,
+    pub avif_mini_encoder: String,
     pub jxl_mini_encoder: String,
 }
 
 pub fn versions() -> Versions {
-    Versions { libwebp: webp::version(), libaom: avif::version(), jxl_mini_encoder: jxl::version() }
+    Versions { libwebp: webp::version(), avif_mini_encoder: avif::version(), jxl_mini_encoder: jxl::version() }
 }
 
 /// Decode, resize, orient and color-convert without encoding (for tests and tools).

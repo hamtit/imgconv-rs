@@ -1,15 +1,17 @@
-//! AVIF encoding with libaom, reproducing what sharp 0.35 / libvips 8.18 /
-//! libheif 1.23 ask of libaom: all-intra still picture, constant quality,
-//! speed = 9 - effort, tune IQ for color (PSNR for alpha), 4:2:0 below
-//! quality 90 (libvips' rule; sharp itself defaults to 4:4:4), BT.601 full-range YCbCr with sRGB nclx, auto tiles, no
-//! intra block copy.
+//! AVIF encoding with avif-mini-encoder (pure Rust), asking of it what sharp 0.35 /
+//! libvips 8.18 / libheif 1.23 ask of libaom: all-intra still picture,
+//! constant quality, speed = 9 - effort, tune IQ for color (PSNR for alpha),
+//! 4:2:0 below quality 90 (libvips' rule; sharp itself defaults to 4:4:4),
+//! BT.601 full-range YCbCr with sRGB nclx, no intra block copy.
 
-use std::ptr;
+use avif_mini_encoder::{Chroma, ColorDesc, EncodeJob, Tune};
 
-use crate::aom::{self, sys};
 use crate::bail;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::image::Image;
+
+/// Version of the pinned avif-mini-encoder (Cargo.toml); the crate exposes none.
+pub const ENCODER_VERSION: &str = "0.1.1";
 
 /// libheif's quality-to-quantizer table for AOM_TUNE_IQ.
 const TUNE_IQ_QUANTIZER: [u8; 101] = [
@@ -27,142 +29,15 @@ pub struct Settings {
     pub threads: u32,
 }
 
-enum Plane<'a> {
-    Color { y: &'a [u8], u: &'a [u8], v: &'a [u8], chroma_w: usize, subsampled: bool },
-    Alpha(&'a [u8]),
-}
+/// libaom's quantizer_to_qindex: the 0-63 "quantizer" scale of cq_level to AV1 qindex.
+const QUANTIZER_TO_QINDEX: [u8; 64] = [
+    0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92, 96, 100, 104, 108,
+    112, 116, 120, 124, 128, 132, 136, 140, 144, 148, 152, 156, 160, 164, 168, 172, 176, 180, 184, 188, 192, 196,
+    200, 204, 208, 212, 216, 220, 224, 228, 232, 236, 240, 244, 249, 255,
+];
 
-fn encode_av1(width: u32, height: u32, plane: Plane<'_>, s: Settings) -> Result<Vec<u8>> {
-    let alpha = matches!(plane, Plane::Alpha(_));
-    let subsampled = matches!(plane, Plane::Color { subsampled: true, .. });
-    unsafe {
-        let iface = sys::aom_codec_av1_cx();
-        let mut cfg = std::mem::zeroed::<sys::aom_codec_enc_cfg_t>();
-        if sys::aom_codec_enc_config_default(iface, &mut cfg, sys::AOM_USAGE_ALL_INTRA) != sys::aom_codec_err_t_AOM_CODEC_OK {
-            bail!("aom_codec_enc_config_default failed");
-        }
-        cfg.g_w = width;
-        cfg.g_h = height;
-        cfg.g_limit = 1;
-        cfg.g_lag_in_frames = 0;
-        cfg.kf_mode = sys::aom_kf_mode_AOM_KF_DISABLED;
-        cfg.kf_max_dist = 0;
-        // Profile 0 covers 4:2:0 and monochrome; 4:4:4 needs profile 1.
-        cfg.g_profile = if alpha || subsampled { 0 } else { 1 };
-        cfg.g_bit_depth = sys::aom_bit_depth_AOM_BITS_8;
-        cfg.g_input_bit_depth = 8;
-        cfg.rc_end_usage = sys::aom_rc_mode_AOM_Q;
-        cfg.rc_min_quantizer = 0;
-        cfg.rc_max_quantizer = 63;
-        cfg.g_error_resilient = 0;
-        cfg.g_threads = s.threads.max(1);
-        cfg.monochrome = u32::from(alpha);
-        cfg.g_timebase = sys::aom_rational { num: 1, den: 30 };
-
-        let mut ctx = std::mem::zeroed::<sys::aom_codec_ctx_t>();
-        if sys::aom_codec_enc_init_ver(&mut ctx, iface, &cfg, 0, sys::AOM_ENCODER_ABI_VERSION as i32)
-            != sys::aom_codec_err_t_AOM_CODEC_OK
-        {
-            bail!("AV1 encoder init failed: {}", aom::error_detail(&mut ctx));
-        }
-        struct Ctx(sys::aom_codec_ctx_t);
-        impl Drop for Ctx {
-            fn drop(&mut self) {
-                unsafe {
-                    sys::aom_codec_destroy(&mut self.0);
-                }
-            }
-        }
-        let mut ctx = Ctx(ctx);
-        let c = &mut ctx.0 as *mut sys::aom_codec_ctx_t;
-
-        let quality = s.quality.min(100) as usize;
-        // Alpha is tuned for PSNR, which uses libheif's linear mapping.
-        let (tune, cq_level) = if alpha {
-            (sys::aom_tune_metric_AOM_TUNE_PSNR, ((100 - quality as i32) * 63 + 50) / 100)
-        } else {
-            (sys::aom_tune_metric_AOM_TUNE_IQ, i32::from(TUNE_IQ_QUANTIZER[quality]))
-        };
-        let speed = 9 - s.effort.min(9) as i32;
-        macro_rules! control {
-            ($id:ident, $v:expr) => {
-                if sys::aom_codec_control(c, sys::$id as i32, $v) != sys::aom_codec_err_t_AOM_CODEC_OK {
-                    bail!("aom_codec_control({}) failed: {}", stringify!($id), aom::error_detail(c));
-                }
-            };
-        }
-        control!(aome_enc_control_id_AOME_SET_CPUUSED, speed);
-        control!(aome_enc_control_id_AOME_SET_CQ_LEVEL, cq_level);
-        if cfg.g_threads > 1 {
-            control!(aome_enc_control_id_AV1E_SET_ROW_MT, 1u32);
-        }
-        control!(aome_enc_control_id_AV1E_SET_AUTO_TILES, 1u32);
-        control!(aome_enc_control_id_AV1E_SET_COLOR_RANGE, 1i32);
-        control!(aome_enc_control_id_AV1E_SET_CHROMA_SAMPLE_POSITION, 0i32);
-        if !alpha {
-            control!(aome_enc_control_id_AV1E_SET_COLOR_PRIMARIES, 1i32);
-            control!(aome_enc_control_id_AV1E_SET_MATRIX_COEFFICIENTS, 6i32);
-            control!(aome_enc_control_id_AV1E_SET_TRANSFER_CHARACTERISTICS, 13i32);
-        }
-        control!(aome_enc_control_id_AOME_SET_TUNING, tune as i32);
-        control!(aome_enc_control_id_AV1E_SET_SKIP_POSTPROC_FILTERING, 1u32);
-        control!(aome_enc_control_id_AV1E_SET_ENABLE_INTRABC, 0i32);
-
-        let mut img = std::mem::zeroed::<sys::aom_image_t>();
-        let fmt = if subsampled || alpha { sys::aom_img_fmt_AOM_IMG_FMT_I420 } else { sys::aom_img_fmt_AOM_IMG_FMT_I444 };
-        // Planes are supplied directly; aom_img_wrap with a dummy pointer only fills the descriptor.
-        sys::aom_img_wrap(&mut img, fmt, width, height, 1, 1 as *mut u8);
-        let gray_chroma;
-        match plane {
-            Plane::Color { y, u, v, chroma_w, .. } => {
-                img.planes = [y.as_ptr() as *mut u8, u.as_ptr() as *mut u8, v.as_ptr() as *mut u8];
-                img.stride = [width as i32, chroma_w as i32, chroma_w as i32];
-            }
-            Plane::Alpha(a) => {
-                let cw = width.div_ceil(2) as usize;
-                gray_chroma = vec![128u8; cw * height.div_ceil(2) as usize];
-                img.planes = [a.as_ptr() as *mut u8, gray_chroma.as_ptr() as *mut u8, gray_chroma.as_ptr() as *mut u8];
-                img.stride = [width as i32, cw as i32, cw as i32];
-                img.monochrome = 1;
-            }
-        }
-        img.range = sys::aom_color_range_AOM_CR_FULL_RANGE;
-        if !alpha {
-            img.cp = 1;
-            img.tc = 13;
-            img.mc = 6;
-        }
-
-        let mut out = Vec::new();
-        let collect = |c: *mut sys::aom_codec_ctx_t, out: &mut Vec<u8>| {
-            let mut iter = ptr::null();
-            loop {
-                let pkt = sys::aom_codec_get_cx_data(c, &mut iter);
-                if pkt.is_null() {
-                    break;
-                }
-                if (*pkt).kind == sys::aom_codec_cx_pkt_kind_AOM_CODEC_CX_FRAME_PKT {
-                    let f = (*pkt).data.frame;
-                    out.extend_from_slice(std::slice::from_raw_parts(f.buf as *const u8, f.sz));
-                }
-            }
-        };
-        if sys::aom_codec_encode(c, &img, 0, 1, 0) != sys::aom_codec_err_t_AOM_CODEC_OK {
-            bail!("AV1 encoding failed: {}", aom::error_detail(c));
-        }
-        collect(c, &mut out);
-        while sys::aom_codec_encode(c, ptr::null(), 0, 0, 0) == sys::aom_codec_err_t_AOM_CODEC_OK {
-            let before = out.len();
-            collect(c, &mut out);
-            if out.len() == before {
-                break;
-            }
-        }
-        if out.is_empty() {
-            bail!("AV1 encoder produced no data");
-        }
-        Ok(out)
-    }
+fn qindex(quantizer: i32) -> u8 {
+    QUANTIZER_TO_QINDEX[quantizer.clamp(0, 63) as usize]
 }
 
 /// RGB(A) to full-range BT.601 YCbCr planes. 4:2:0 chroma is the average of
@@ -214,16 +89,54 @@ pub fn encode(img: Image, s: Settings) -> Result<Vec<u8>> {
     // it with chromaSubsampling '4:4:4' by default; 4:2:0 is kept here as it
     // encodes faster and smaller, see README.)
     let subsampled = s.quality < 90;
-    let (width, height) = (img.width, img.height);
+    let (width, height) = (img.width as usize, img.height as usize);
     let alpha_plane: Option<Vec<u8>> = img.has_alpha().then(|| img.data.chunks_exact(4).map(|p| p[3]).collect());
-    let (y, u, v, chroma_w) = rgb_to_ycbcr(&img, subsampled);
+    let (y, u, v, _) = rgb_to_ycbcr(&img, subsampled);
     drop(img);
-    let color = encode_av1(width, height, Plane::Color { y: &y, u: &u, v: &v, chroma_w, subsampled }, s)?;
-    drop((y, u, v));
-    let alpha = match &alpha_plane {
-        Some(a) => Some(encode_av1(width, height, Plane::Alpha(a), s)?),
-        None => None,
+
+    let quality = s.quality.min(100) as usize;
+    let speed = 9u32.saturating_sub(s.effort).min(9) as u8;
+    let color_planes = [y.as_slice(), u.as_slice(), v.as_slice()];
+    let color_job = EncodeJob {
+        planes: &color_planes,
+        width,
+        height,
+        chroma: if subsampled { Chroma::Yuv420 } else { Chroma::Yuv444 },
+        color: Some(ColorDesc { primaries: 1, transfer: 13, matrix: 6 }),
+        full_range: true,
+        qindex: qindex(i32::from(TUNE_IQ_QUANTIZER[quality])),
+        tune: Tune::Iq,
+        speed,
     };
+    let threads = s.threads.max(1) as usize;
+    let map_err = |e: avif_mini_encoder::Error| Error(format!("AV1 encoding failed: {e}"));
+    let (color, alpha) = match &alpha_plane {
+        Some(a) => {
+            let alpha_planes = [a.as_slice()];
+            let alpha_job = EncodeJob {
+                planes: &alpha_planes,
+                chroma: Chroma::Mono,
+                color: None,
+                // libheif: tune PSNR with the quantizer taken linearly from quality
+                qindex: qindex(((100 - quality as i32) * 63 + 50) / 100),
+                tune: Tune::Psnr,
+                ..color_job
+            };
+            let (c, a) = avif_mini_encoder::encode_av1_pair(color_job, alpha_job, threads);
+            (c.map_err(map_err)?.0, Some(a.map_err(map_err)?.0))
+        }
+        None => {
+            let c = avif_mini_encoder::encode_av1_threads(
+                color_job.planes, width, height, color_job.chroma, color_job.color, true, color_job.qindex,
+                Tune::Iq, speed, threads,
+            );
+            (c.map_err(map_err)?.0, None)
+        }
+    };
+    if color.is_empty() {
+        bail!("AV1 encoder produced no data");
+    }
+    drop((y, u, v));
     let mut avif = avif_serialize::Aviffy::new();
     avif.set_full_color_range(true)
         .set_matrix_coefficients(avif_serialize::constants::MatrixCoefficients::Bt601)
@@ -231,9 +144,9 @@ pub fn encode(img: Image, s: Settings) -> Result<Vec<u8>> {
         .set_color_primaries(avif_serialize::constants::ColorPrimaries::Bt709)
         .set_chroma_subsampling((subsampled, subsampled))
         .set_seq_profile(if subsampled { 0 } else { 1 });
-    Ok(avif.to_vec(&color, alpha.as_deref(), width, height, 8))
+    Ok(avif.to_vec(&color, alpha.as_deref(), width as u32, height as u32, 8))
 }
 
 pub fn version() -> String {
-    aom::version()
+    ENCODER_VERSION.to_string()
 }

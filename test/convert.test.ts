@@ -24,7 +24,7 @@ async function pixel(buf: Buffer, x: number, y: number) {
 
 describe('versions', () => {
   test('reports the bundled codec versions', () => {
-    expect(versions()).toEqual({ imgconvRs: cargoVersion, libwebp: '1.6.0', libaom: 'v3.15.1', jxlMiniEncoder: '0.3.0' });
+    expect(versions()).toEqual({ imgconvRs: cargoVersion, libwebp: '1.6.0', avifMiniEncoder: '0.1.1', jxlMiniEncoder: '0.3.0' });
   });
 });
 
@@ -100,13 +100,12 @@ describe('convert', () => {
     expect((await sharp((await convert(opaque, { format: 'avif' })).data).metadata()).hasAlpha).toBe(false);
   });
 
-  test('decodes PNG, WebP, GIF, AVIF and SVG input', async () => {
+  test('decodes PNG, WebP, GIF and SVG input', async () => {
     const base = sharp(await photo(300, 200));
     const inputs = {
       png: await base.clone().png().toBuffer(),
       webp: await base.clone().webp().toBuffer(),
       gif: await base.clone().gif().toBuffer(),
-      avif: await base.clone().avif().toBuffer(),
       svg: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="75" height="50" fill="#ff0"/><rect x="75" width="225" height="200" fill="#36c"/></svg>'),
     };
     for (const [name, buf] of Object.entries(inputs)) {

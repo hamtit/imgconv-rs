@@ -3,7 +3,6 @@
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
-./scripts/fetch-deps.sh
 cargo build --release "$@"
 ARCH=$(uname -m)
 case "$ARCH" in x86_64) ARCH=x64 ;; aarch64) ARCH=arm64 ;; esac
