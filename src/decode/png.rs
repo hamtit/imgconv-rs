@@ -57,7 +57,8 @@ fn decode_streamed(reader: &mut png::Reader<Cursor<&[u8]>>, tw: u32, th: u32) ->
     let mut stream = StreamResizer::new(w, h, tw, th, channels)?;
     let mut expanded = Vec::new();
     for _ in 0..h {
-        let row = reader.next_row().map_err(png_err)?.ok_or_else(|| Error("PNG decoding failed: truncated image".into()))?;
+        let row =
+            reader.next_row().map_err(png_err)?.ok_or_else(|| Error("PNG decoding failed: truncated image".into()))?;
         if gray {
             expanded.clear();
             if channels == 4 {

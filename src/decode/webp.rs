@@ -74,8 +74,7 @@ fn decode_still(buf: &[u8], f: &w::WebPBitstreamFeatures, shrink: u32) -> Result
         }
         let stride = width as usize * channels as usize;
         let mut out = vec![0u8; stride * height as usize];
-        config.output.colorspace =
-            if channels == 4 { w::WEBP_CSP_MODE::MODE_RGBA } else { w::WEBP_CSP_MODE::MODE_RGB };
+        config.output.colorspace = if channels == 4 { w::WEBP_CSP_MODE::MODE_RGBA } else { w::WEBP_CSP_MODE::MODE_RGB };
         config.output.is_external_memory = 1;
         config.output.u.RGBA = w::WebPRGBABuffer { rgba: out.as_mut_ptr(), stride: stride as i32, size: out.len() };
         let status = w::WebPDecode(buf.as_ptr(), buf.len(), &mut config);

@@ -61,7 +61,14 @@ fn output_code(f: OutputFormat) -> u32 {
     }
 }
 
-fn options(format: u32, quality: f32, max_dimension: u32, effort: i32, max_pixels: f64, animated: u32) -> Option<Options> {
+fn options(
+    format: u32,
+    quality: f32,
+    max_dimension: u32,
+    effort: i32,
+    max_pixels: f64,
+    animated: u32,
+) -> Option<Options> {
     let format = match format {
         0 => OutputFormat::Webp,
         1 => OutputFormat::Avif,

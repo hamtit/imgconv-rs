@@ -59,7 +59,9 @@ pub fn encode(img: &Image, quality: f32, effort: i32) -> Result<Vec<u8>> {
         pic.0.writer = Some(w::WebPMemoryWrite);
         pic.0.custom_ptr = (&mut writer as *mut w::WebPMemoryWriter).cast();
         let ok = w::WebPEncode(&config, &mut pic.0);
-        let out = if ok != 0 { Ok(std::slice::from_raw_parts(writer.mem, writer.size).to_vec()) } else {
+        let out = if ok != 0 {
+            Ok(std::slice::from_raw_parts(writer.mem, writer.size).to_vec())
+        } else {
             Err(crate::error::err(format!("WebP encoding failed ({:?})", pic.0.error_code)))
         };
         w::WebPMemoryWriterClear(&mut writer);

@@ -36,7 +36,8 @@ pub fn cicp_to_srgb(img: &mut Image, primaries: u8, transfer: u8) {
     if srgb_primaries && srgb_transfer {
         return;
     }
-    let (Ok(cp), Ok(tc)) = (moxcms::CicpColorPrimaries::try_from(primaries), moxcms::TransferCharacteristics::try_from(transfer))
+    let (Ok(cp), Ok(tc)) =
+        (moxcms::CicpColorPrimaries::try_from(primaries), moxcms::TransferCharacteristics::try_from(transfer))
     else {
         return;
     };
@@ -60,8 +61,7 @@ fn apply_profile(img: &mut Image, profile: &ColorProfile) {
     }
     let layout = if img.has_alpha() { Layout::Rgba } else { Layout::Rgb };
     let dst = ColorProfile::new_srgb();
-    let Ok(transform) = profile.create_transform_8bit(layout, &dst, layout, TransformOptions::default())
-    else {
+    let Ok(transform) = profile.create_transform_8bit(layout, &dst, layout, TransformOptions::default()) else {
         return;
     };
     transform_rows_in_place(img, |s, d| transform.transform(s, d).is_ok());
@@ -86,8 +86,10 @@ fn transform_rows_in_place(img: &mut Image, mut f: impl FnMut(&[u8], &mut [u8]) 
 /// Gray profile on decoded gray data (expanded to R=G=B by the decoders):
 /// map the gray channel through the profile into sRGB.
 fn gray_to_srgb(img: &mut Image, profile: &ColorProfile) {
-    let (src_layout, dst_layout) = if img.has_alpha() { (Layout::GrayAlpha, Layout::Rgba) } else { (Layout::Gray, Layout::Rgb) };
-    let Ok(transform) = profile.create_transform_8bit(src_layout, &ColorProfile::new_srgb(), dst_layout, TransformOptions::default())
+    let (src_layout, dst_layout) =
+        if img.has_alpha() { (Layout::GrayAlpha, Layout::Rgba) } else { (Layout::Gray, Layout::Rgb) };
+    let Ok(transform) =
+        profile.create_transform_8bit(src_layout, &ColorProfile::new_srgb(), dst_layout, TransformOptions::default())
     else {
         return;
     };
@@ -136,10 +138,7 @@ pub fn cmyk_to_rgb(cmyk: &[u8], width: u32, height: u32, icc: Option<&[u8]>, inv
         let mut out = vec![0u8; pixels * 3];
         let row_in = width as usize * 4;
         let row_out = width as usize * 3;
-        let ok = cmyk
-            .chunks_exact(row_in)
-            .zip(out.chunks_exact_mut(row_out))
-            .all(|(s, d)| t.transform(s, d).is_ok());
+        let ok = cmyk.chunks_exact(row_in).zip(out.chunks_exact_mut(row_out)).all(|(s, d)| t.transform(s, d).is_ok());
         if ok {
             return Image::new(width, height, 3, out);
         }

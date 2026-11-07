@@ -13,7 +13,9 @@ struct Rgba {
 
 fn read_png(path: &str) -> Rgba {
     let mut dec = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(path).unwrap()));
-    dec.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16 | png::Transformations::ALPHA);
+    dec.set_transformations(
+        png::Transformations::EXPAND | png::Transformations::STRIP_16 | png::Transformations::ALPHA,
+    );
     let mut r = dec.read_info().unwrap();
     let mut buf = vec![0; r.output_buffer_size().unwrap()];
     let info = r.next_frame(&mut buf).unwrap();

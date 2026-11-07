@@ -64,7 +64,15 @@ pub struct Options {
 
 impl Options {
     pub fn new(format: OutputFormat, quality: f32) -> Self {
-        Options { format, quality, max_dimension: None, effort: None, max_pixels: DEFAULT_MAX_PIXELS, animated: true, threads: 1 }
+        Options {
+            format,
+            quality,
+            max_dimension: None,
+            effort: None,
+            max_pixels: DEFAULT_MAX_PIXELS,
+            animated: true,
+            threads: 1,
+        }
     }
 }
 
@@ -207,7 +215,6 @@ fn guard<T>(f: impl FnOnce() -> Result<T>) -> Result<T> {
     }
 }
 
-
 /// Convert an encoded image.
 pub fn convert(buf: &[u8], opts: &Options) -> Result<Output> {
     guard(|| {
@@ -258,7 +265,14 @@ pub fn convert_rgba(rgba: &[u8], width: u32, height: u32, opts: &Options) -> Res
         image.drop_opaque_alpha();
         let (out_w, out_h) = (image.width, image.height);
         let data = encode_still(image, opts)?;
-        let input = Info { format: Format::Png, width, height, frames: 1, orientation: 1, max_frame_pixels: u64::from(width) * u64::from(height) };
+        let input = Info {
+            format: Format::Png,
+            width,
+            height,
+            frames: 1,
+            orientation: 1,
+            max_frame_pixels: u64::from(width) * u64::from(height),
+        };
         Ok(Output { data, format: opts.format, width: out_w, height: out_h, frames: 1, input })
     })
 }

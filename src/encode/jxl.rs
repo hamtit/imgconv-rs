@@ -60,8 +60,7 @@ pub fn encode_animation(
     if quality >= AUTO_LOSSLESS_QUALITY && jxl_mini_encoder::animation_prefers_lossless(&list) {
         enc = enc.lossless();
     }
-    enc.encode_animation(&list, &jxl_mini_encoder::AnimationOptions::default())
-        .map_err(|e| Error(format!("jxl: {e}")))
+    enc.encode_animation(&list, &jxl_mini_encoder::AnimationOptions::default()).map_err(|e| Error(format!("jxl: {e}")))
 }
 
 pub fn version() -> String {
