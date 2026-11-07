@@ -65,8 +65,8 @@ dependencies = [
 
 [[package]]
 name = "avif-mini-encoder"
-version = "0.1.2"
-source = "git+https://github.com/hamtit/avif-mini-encoder?tag=v0.1.2#b164b1b03c5b2db106b533ced66d776ae0424ca2"
+version = "0.2.0"
+source = "git+https://github.com/hamtit/avif-mini-encoder?tag=v0.2.0#65e2c17e34904d36feaf713cf5b08daa232bcf34"
 dependencies = [
  "avif-serialize",
 ]
