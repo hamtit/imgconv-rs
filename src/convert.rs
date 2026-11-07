@@ -137,19 +137,36 @@ fn convert_animated_gif_jxl(buf: &[u8], info: &Info, opts: &Options) -> Result<O
     let target = opts.max_dimension.and_then(|m| resize::fit_inside(frames.width, frames.height, m));
     let (w, h) = target.unwrap_or((frames.width, frames.height));
     let (cw, ch) = (frames.width, frames.height);
-    let (mut canvases, mut delays) = (Vec::new(), Vec::new());
+    let (mut canvases, mut delays): (Vec<Vec<u8>>, Vec<u32>) = (Vec::new(), Vec::new());
+    // Opaque canvases (nearly every GIF) are kept as RGB: 25% less memory than RGBA.
+    let mut opaque = true;
     let mut first = true;
     while let Some(frame) = frames.next_frame(first)? {
         first = false;
         let canvas = ImageView { width: cw, height: ch, channels: 4, data: frame.rgba };
-        canvases.push(match target {
-            Some((tw, th)) => resize::resize(&canvas, tw, th)?.data,
-            None => frame.rgba.to_vec(),
+        let resized;
+        let rgba: &[u8] = match target {
+            Some((tw, th)) => {
+                resized = resize::resize(&canvas, tw, th)?.data;
+                &resized
+            }
+            None => frame.rgba,
+        };
+        if opaque && !rgba.chunks_exact(4).all(|p| p[3] == 255) {
+            opaque = false;
+            for c in &mut canvases {
+                *c = c.chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect();
+            }
+        }
+        canvases.push(if opaque {
+            rgba.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).collect()
+        } else {
+            rgba.to_vec()
         });
         delays.push(frame.delay_ms / 10);
     }
     let effort = opts.effort.unwrap_or(OutputFormat::Jxl.default_effort());
-    let data = jxl::encode_animation(canvases, &delays, w, h, opts.quality, effort, opts.threads)?;
+    let data = jxl::encode_animation(&canvases, opaque, &delays, w, h, opts.quality, effort, opts.threads)?;
     Ok(Output { data, format: OutputFormat::Jxl, width: w, height: h, frames: delays.len() as u32, input: *info })
 }
 

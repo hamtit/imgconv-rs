@@ -23,7 +23,7 @@ sharp (libvips) は汎用の画像処理ライブラリだが、Web 配信用の
 |---|---|---|---|
 | WebP エンコード・デコード | libwebp (`libwebp-sys`) | 1.6.0 | sharp と同じ版。libvips と同じ設定 (preset default、method 4、alpha_quality 100) にしており、同じ画素からは**同一バイト列**を出力する |
 | AVIF エンコード | [avif-mini-encoder](https://github.com/hamtit/avif-mini-encoder) (純 Rust、git タグで固定) | 0.1.1 | libaom 3.15.1 の代わり。libheif 1.23 が libaom に渡す設定 (all-intra、speed = 9 - effort、tune IQ、quality 90 未満は 4:2:0 (libvips の規則。sharp は既定で 4:4:4 に上書きしているが、ここでは合わせない)、BT.601 full range など) を参考にしている。出力は libaom と一致しない。1 タイルのみなので、幅 4096・面積 4096×2304 を超える画像はエラーになる |
-| JPEG XL エンコード | [jxl-mini-encoder](https://github.com/hamtit/jxl-mini-encoder) (純 Rust、git タグで固定) | 0.4.0 | libjxl 0.12.0 の代わり。effort 7、quality → distance の変換は libjxl と同じ。libjxl との違いは [libjxl を使っていないことによる差](#libjxl-を使っていないことによる差) |
+| JPEG XL エンコード | [jxl-mini-encoder](https://github.com/hamtit/jxl-mini-encoder) (純 Rust、git タグで固定) | 0.4.1 | libjxl 0.12.0 の代わり。effort 7、quality → distance の変換は libjxl と同じ。libjxl との違いは [libjxl を使っていないことによる差](#libjxl-を使っていないことによる差) |
 | JPEG デコード | mozjpeg (`mozjpeg-sys` 2.2) | | sharp と同じく mozjpeg (libjpeg-turbo 系の SIMD デコーダー) |
 | PNG / GIF デコード | `png` / `gif` クレート | | Rust 実装 |
 | 縮小 | `fast_image_resize` | 6 | SIMD (AVX2 / NEON) の Lanczos3 |
@@ -136,17 +136,18 @@ sharp 0.35.5 を使った一般的な変換 (WebP / AVIF は sharp、JPEG XL は
 - **WebP**: 同じ画素からは sharp と同一のバイト列になる。画質の差は縮小処理の差。320px での差は、sharp (libvips) の縮小がこの基準よりわずかにぼけるため
 - **AVIF**: エンコーダーが違うので出力は libaom と一致しない。サムネイル (320) では sharp よりファイルが 8% 小さく SSIMULACRA2 も 2.2 点高いが、縮小しない大きい画像 (1920) では 1.3 点低く、ファイルは 0.3% 大きい。sharp は `chromaSubsampling` の既定を 4:4:4 にしている (libvips 自体の既定は quality 90 未満で 4:2:0) が、このライブラリは libvips の規則どおり 4:2:0 にしており、その分の色差も 1920 での差に含まれる。1 枚ずつ変換するときの `threads` は CDEF の強度探索などにしか効かず、1 → 4 スレッドで 91 → 86 s と効果が小さい (libaom 版は 136 → 43 s だった)
 - **JPEG XL**: この表の JPEG XL の数値は、libjxl 0.12.0 を使っていた版 (v0.2.0) で測ったもの。現在は jxl-mini-encoder に替えており、再測定していない (差は次の節)。当時の違いは縮小と、完全に不透明な画像でアルファチャンネルを付けないこと
-- **アニメーション GIF → JPEG XL**: jxl-mini-encoder 0.4.0 でフレームを並列にエンコードする。256 色以下で、フレーム間に変化する画素が平均 10% 未満のアニメーション（画面録画、簡単なゲームなど）は、`quality` が 70 以上なら可逆（パレット変換 + 変化部分だけの差分フレーム）で符号化する。厳密で、同じ設定の非可逆より小さい。測定値（`quality` 75、effort 7、4 スレッド、GIF のデコード込み、ピーク RSS）: 
+- **アニメーション GIF → JPEG XL**: jxl-mini-encoder 0.4.1 でフレームを並列にエンコードする。256 色以下で、フレーム間に変化する画素が平均 10% 未満のアニメーション（画面録画、簡単なゲームなど）は、`quality` が 70 以上なら可逆（パレット変換 + 変化部分だけの差分フレーム）で符号化する。厳密で、同じ設定の非可逆より小さい。測定値（`quality` 75、effort 7、4 スレッド、GIF のデコード込み、ピーク RSS）: 
 
-  | GIF（フレーム数、サイズ） | 旧 (0.3.0) | 新 (0.4.0) |
+  | GIF（フレーム数、サイズ） | 旧 (0.4.0) | 新 (0.4.1) |
   |---|---|---|
-  | 153 フレーム、249KB | 308KB、2.0 秒、250MB | 241KB、1.2 秒、188MB |
-  | 337 フレーム、868KB | 2.24MB、9.9 秒、650MB | 756KB、8.8 秒、441MB |
-  | 240 フレーム、4.8MB | 2.08MB、10.3 秒、385MB | 2.08MB、6.0 秒、253MB |
-  | 315 フレーム、5.2MB | 6.13MB、16.6 秒、595MB | 4.57MB、16.7 秒、424MB |
-  | 460 フレーム、9.5MB | 7.49MB、23.4 秒、755MB | 7.49MB、12.9 秒、472MB |
+  | 153 フレーム、249KB | 241KB、1.0 秒、184MB | 235KB、0.5 秒、160MB |
+  | 337 フレーム、868KB | 756KB、8.3 秒、431MB | 738KB、3.1 秒、362MB |
+  | 240 フレーム、4.8MB | 2.08MB、4.4 秒、244MB | 2.08MB、4.2 秒、195MB |
+  | 315 フレーム、5.2MB | 4.57MB、14.9 秒、413MB | 4.54MB、6.9 秒、344MB |
+  | 460 フレーム、9.5MB | 7.49MB、9.8 秒、458MB | 7.49MB、9.4 秒、359MB |
 
-  メモリは不透明なフレームを RGB に詰め替える際の全フレームの二重保持をやめた分も含む。
+  0.4.1 は可逆の木学習を高速化し（出力は同一）、パレット画像の木の分割しきい値を下げて 1〜2% 小さくした。
+  メモリは不透明なフレームを最初から RGB で保持する分を含む。
 - **アニメーション GIF → WebP**: 両者とも libwebp でアニメーション WebP にしており、出力サイズはほぼ同じ (上の表の速度・メモリには含まれる)
 
 ### libjxl を使っていないことによる差
