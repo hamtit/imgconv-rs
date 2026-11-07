@@ -62,7 +62,11 @@ fn decode_streamed(reader: &mut png::Reader<Cursor<&[u8]>>, tw: u32, th: u32) ->
         if gray {
             expanded.clear();
             if channels == 4 {
-                row.data().chunks_exact(2).for_each(|p| expanded.extend_from_slice(&[p[0], p[0], p[0], p[1]]));
+                row.data()
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .for_each(|p| expanded.extend_from_slice(&[p[0], p[0], p[0], p[1]]));
             } else {
                 row.data().iter().for_each(|&g| expanded.extend_from_slice(&[g, g, g]));
             }

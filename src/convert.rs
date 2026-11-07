@@ -160,14 +160,14 @@ fn convert_animated_gif_jxl(buf: &[u8], info: &Info, opts: &Options) -> Result<O
             }
             None => frame.rgba,
         };
-        if opaque && !rgba.chunks_exact(4).all(|p| p[3] == 255) {
+        if opaque && !rgba.as_chunks::<4>().0.iter().all(|p| p[3] == 255) {
             opaque = false;
             for c in &mut canvases {
-                *c = c.chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect();
+                *c = c.as_chunks::<3>().0.iter().flat_map(|p| [p[0], p[1], p[2], 255]).collect();
             }
         }
         canvases.push(if opaque {
-            rgba.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).collect()
+            rgba.as_chunks::<4>().0.iter().flat_map(|p| [p[0], p[1], p[2]]).collect()
         } else {
             rgba.to_vec()
         });

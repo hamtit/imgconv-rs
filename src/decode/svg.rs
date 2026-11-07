@@ -38,7 +38,7 @@ pub fn decode(buf: &[u8], size: Option<(u32, u32)>) -> Result<Image> {
     resvg::render(&tree, transform, &mut pixmap.as_mut());
     let mut data = pixmap.take();
     // tiny-skia stores premultiplied RGBA.
-    for p in data.chunks_exact_mut(4) {
+    for p in data.as_chunks_mut::<4>().0 {
         let a = u32::from(p[3]);
         if a > 0 && a < 255 {
             for c in &mut p[..3] {

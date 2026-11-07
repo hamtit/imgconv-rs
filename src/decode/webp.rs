@@ -8,6 +8,8 @@ use crate::error::Result;
 use crate::image::Image;
 
 fn features(buf: &[u8]) -> Result<w::WebPBitstreamFeatures> {
+    // SAFETY: all-zero is a valid `WebPBitstreamFeatures` (a plain C struct); `WebPGetFeatures`
+    // reads `buf.len()` bytes from `buf` and writes only to `f`.
     unsafe {
         let mut f = std::mem::zeroed::<w::WebPBitstreamFeatures>();
         if w::WebPGetFeatures(buf.as_ptr(), buf.len(), &mut f) != w::VP8StatusCode::VP8_STATUS_OK {
@@ -60,6 +62,10 @@ pub fn decode(buf: &[u8], shrink: u32) -> Result<Decoded> {
 fn decode_still(buf: &[u8], f: &w::WebPBitstreamFeatures, shrink: u32) -> Result<Image> {
     let channels: u8 = if f.has_alpha != 0 { 4 } else { 3 };
     let (mut width, mut height) = (f.width as u32, f.height as u32);
+    // SAFETY: `config` is zeroed (valid for this C struct) and then initialised by libwebp. `out`
+    // holds `stride * height` bytes for the (possibly scaled) output size, is registered as
+    // external memory so libwebp neither reallocates nor frees it, and outlives `WebPDecode`.
+    // `buf` is readable for `buf.len()` bytes.
     unsafe {
         let mut config = std::mem::zeroed::<w::WebPDecoderConfig>();
         if !w::WebPInitDecoderConfig(&mut config) {
@@ -87,6 +93,9 @@ fn decode_still(buf: &[u8], f: &w::WebPBitstreamFeatures, shrink: u32) -> Result
 }
 
 fn first_frame(buf: &[u8]) -> Result<Image> {
+    // SAFETY: `data` borrows `buf`, which outlives the decoder (deleted before returning). `frame`
+    // points into the decoder's RGBA canvas of `canvas_width * canvas_height * 4` bytes and is
+    // copied out before `WebPAnimDecoderDelete` frees it.
     unsafe {
         let mut opts = std::mem::zeroed::<w::WebPAnimDecoderOptions>();
         if w::WebPAnimDecoderOptionsInit(&mut opts) == 0 {

@@ -13,6 +13,7 @@ fn config(quality: f32, effort: i32) -> Result<w::WebPConfig> {
     };
     config.alpha_quality = 100;
     config.method = effort.clamp(0, 6);
+    // SAFETY: `config` was initialised by `new_with_preset` and is a valid reference.
     if unsafe { w::WebPValidateConfig(&config) } == 0 {
         bail!("invalid WebP configuration");
     }
@@ -28,7 +29,11 @@ impl Picture {
         pic.width = img.width as i32;
         pic.height = img.height as i32;
         pic.use_argb = i32::from(use_argb);
+        // libwebp reads `height` rows of `stride` bytes from the pointer.
+        assert!(img.data.len() >= img.stride() * img.height as usize, "pixel buffer shorter than width * height");
         let stride = img.stride() as i32;
+        // SAFETY: `pic` was initialised by `WebPPicture::new` with this size, and the assert above
+        // guarantees `img.data` covers every row libwebp reads; the pixels are copied during the call.
         let ok = unsafe {
             if img.has_alpha() {
                 w::WebPPictureImportRGBA(&mut pic, img.data.as_ptr(), stride)
@@ -46,6 +51,7 @@ impl Picture {
 
 impl Drop for Picture {
     fn drop(&mut self) {
+        // SAFETY: `self.0` was initialised by `WebPPicture::new` and is freed exactly once, here.
         unsafe { w::WebPPictureFree(&mut self.0) }
     }
 }
@@ -53,6 +59,9 @@ impl Drop for Picture {
 pub fn encode(img: &Image, quality: f32, effort: i32) -> Result<Vec<u8>> {
     let config = config(quality, effort)?;
     let mut pic = Picture::import(img.view(), false)?;
+    // SAFETY: `writer` is initialised by `WebPMemoryWriterInit` before use and outlives
+    // `WebPEncode`, the only user of `custom_ptr`. After a successful encode `writer.mem` points at
+    // `writer.size` initialised bytes, copied out before `WebPMemoryWriterClear` frees them.
     unsafe {
         let mut writer = std::mem::zeroed::<w::WebPMemoryWriter>();
         w::WebPMemoryWriterInit(&mut writer);
@@ -80,6 +89,8 @@ pub struct AnimEncoder {
 impl AnimEncoder {
     pub fn new(width: u32, height: u32, quality: f32, effort: i32) -> Result<Self> {
         let config = config(quality, effort)?;
+        // SAFETY: `opts` is zeroed (valid for this C struct) and initialised by libwebp before use;
+        // `WebPAnimEncoderNewInternal` copies it, and a null encoder is handled below.
         unsafe {
             let mut opts = std::mem::zeroed::<w::WebPAnimEncoderOptions>();
             if w::WebPAnimEncoderOptionsInitInternal(&mut opts, w::WEBP_MUX_ABI_VERSION as i32) == 0 {
@@ -103,6 +114,8 @@ impl AnimEncoder {
     /// browsers and libvips).
     pub fn add(&mut self, frame: ImageView, delay_ms: u32) -> Result<()> {
         let mut pic = Picture::import(frame, true)?;
+        // SAFETY: `self.enc` is a live encoder (created in `new`, deleted only in `Drop`); `pic` and
+        // `self.config` are valid for the call and the encoder copies the picture.
         unsafe {
             if w::WebPAnimEncoderAdd(self.enc, &mut pic.0, self.timestamp_ms, &self.config) == 0 {
                 bail!("WebP animation frame failed: {}", self.error());
@@ -115,6 +128,8 @@ impl AnimEncoder {
     }
 
     fn error(&self) -> String {
+        // SAFETY: `self.enc` is live. `WebPAnimEncoderGetError` returns null or a NUL-terminated
+        // string owned by the encoder, which is copied before returning.
         unsafe {
             let e = w::WebPAnimEncoderGetError(self.enc);
             if e.is_null() { String::new() } else { std::ffi::CStr::from_ptr(e).to_string_lossy().into_owned() }
@@ -122,6 +137,8 @@ impl AnimEncoder {
     }
 
     pub fn finish(self) -> Result<Vec<u8>> {
+        // SAFETY: `self.enc` is live. A null frame flushes the encoder. After a successful
+        // assemble, `data.bytes` points at `data.size` bytes, copied before `WebPDataClear` frees them.
         unsafe {
             if w::WebPAnimEncoderAdd(self.enc, std::ptr::null_mut(), self.timestamp_ms, std::ptr::null()) == 0 {
                 bail!("WebP animation failed: {}", self.error());
@@ -139,11 +156,13 @@ impl AnimEncoder {
 
 impl Drop for AnimEncoder {
     fn drop(&mut self) {
+        // SAFETY: `self.enc` came from `WebPAnimEncoderNewInternal` and is deleted exactly once, here.
         unsafe { w::WebPAnimEncoderDelete(self.enc) }
     }
 }
 
 pub fn version() -> String {
+    // SAFETY: `WebPGetEncoderVersion` takes no arguments and has no preconditions.
     let v = unsafe { w::WebPGetEncoderVersion() };
     format!("{}.{}.{}", v >> 16, (v >> 8) & 0xff, v & 0xff)
 }

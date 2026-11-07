@@ -87,7 +87,8 @@ pub fn encode(img: Image, s: Settings) -> Result<Vec<u8>> {
     // encodes faster and smaller, see README.)
     let subsampled = s.quality < 90;
     let (width, height) = (img.width as usize, img.height as usize);
-    let alpha_plane: Option<Vec<u8>> = img.has_alpha().then(|| img.data.chunks_exact(4).map(|p| p[3]).collect());
+    let alpha_plane: Option<Vec<u8>> =
+        img.has_alpha().then(|| img.data.as_chunks::<4>().0.iter().map(|p| p[3]).collect());
     let (y, u, v, _) = rgb_to_ycbcr(&img, subsampled);
     drop(img);
 

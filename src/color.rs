@@ -144,7 +144,7 @@ pub fn cmyk_to_rgb(cmyk: &[u8], width: u32, height: u32, icc: Option<&[u8]>, inv
         }
     }
     let mut out = Vec::with_capacity(pixels * 3);
-    for p in cmyk.chunks_exact(4) {
+    for p in cmyk.as_chunks::<4>().0 {
         let k = 255 - u32::from(p[3]);
         for &c in &p[..3] {
             out.push(((255 - u32::from(c)) * k / 255) as u8);

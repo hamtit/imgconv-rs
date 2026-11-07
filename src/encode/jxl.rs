@@ -33,6 +33,7 @@ const AUTO_LOSSLESS_QUALITY: f32 = 70.0;
 /// Flat-colour animations with few changing pixels (screen recordings, simple
 /// games) are coded lossless when `quality` is at least 70, since that is both
 /// exact and smaller than lossy for them.
+#[allow(clippy::too_many_arguments)]
 pub fn encode_animation(
     frames: &[Vec<u8>],
     opaque: bool,
