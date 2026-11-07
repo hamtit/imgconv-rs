@@ -3,7 +3,7 @@
 use fast_image_resize::images::{Image as FirImage, ImageRef};
 use fast_image_resize::{FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer};
 
-use crate::error::{Result, err};
+use crate::error::{Error, Result};
 use crate::image::{Image, ImageView};
 
 /// Target size for sharp's `fit: 'inside', withoutEnlargement: true`, or None
@@ -14,11 +14,7 @@ pub fn fit_inside(width: u32, height: u32, max: u32) -> Option<(u32, u32)> {
     }
     let (w, h) = (f64::from(width), f64::from(height));
     let m = f64::from(max);
-    Some(if w >= h {
-        (max, ((h * m / w).round() as u32).max(1))
-    } else {
-        (((w * m / h).round() as u32).max(1), max)
-    })
+    Some(if w >= h { (max, ((h * m / w).round() as u32).max(1)) } else { (((w * m / h).round() as u32).max(1), max) })
 }
 
 pub fn resize(img: &ImageView, width: u32, height: u32) -> Result<Image> {
@@ -26,10 +22,12 @@ pub fn resize(img: &ImageView, width: u32, height: u32) -> Result<Image> {
         return Ok(Image::new(width, height, img.channels, img.data.to_vec()));
     }
     let pixel_type = if img.channels == 4 { PixelType::U8x4 } else { PixelType::U8x3 };
-    let src = ImageRef::new(img.width, img.height, img.data, pixel_type).map_err(|e| err(format!("resize: {e}")))?;
+    let src = ImageRef::new(img.width, img.height, img.data, pixel_type)
+        .map_err(|e| Error::Resize(format!("resize: {e}")))?;
     let mut dst = FirImage::new(width, height, pixel_type);
-    let opts = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::Lanczos3)).use_alpha(img.channels == 4);
-    Resizer::new().resize(&src, &mut dst, &opts).map_err(|e| err(format!("resize: {e}")))?;
+    let opts =
+        ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::Lanczos3)).use_alpha(img.channels == 4);
+    Resizer::new().resize(&src, &mut dst, &opts).map_err(|e| Error::Resize(format!("resize: {e}")))?;
     Ok(Image::new(width, height, img.channels, dst.into_vec()))
 }
 

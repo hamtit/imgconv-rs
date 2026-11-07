@@ -6,7 +6,7 @@
 use resvg::tiny_skia;
 use resvg::usvg;
 
-use crate::error::{Result, err};
+use crate::error::{Error, Result};
 use crate::image::Image;
 
 fn parse(buf: &[u8]) -> Result<usvg::Tree> {
@@ -18,7 +18,7 @@ fn parse(buf: &[u8]) -> Result<usvg::Tree> {
         },
         ..usvg::Options::default()
     };
-    usvg::Tree::from_data(buf, &options).map_err(|e| err(format!("Invalid SVG: {e}")))
+    usvg::Tree::from_data(buf, &options).map_err(|e| Error::InvalidImage(format!("Invalid SVG: {e}")))
 }
 
 /// Intrinsic size in pixels (rounded up, at least 1).
@@ -33,12 +33,13 @@ pub fn decode(buf: &[u8], size: Option<(u32, u32)>) -> Result<Image> {
     let tree = parse(buf)?;
     let intrinsic = tree.size();
     let (w, h) = size.unwrap_or((intrinsic.width().ceil().max(1.0) as u32, intrinsic.height().ceil().max(1.0) as u32));
-    let mut pixmap = tiny_skia::Pixmap::new(w, h).ok_or_else(|| err("Invalid SVG dimensions"))?;
+    let mut pixmap =
+        tiny_skia::Pixmap::new(w, h).ok_or_else(|| Error::InvalidImage("Invalid SVG dimensions".into()))?;
     let transform = tiny_skia::Transform::from_scale(w as f32 / intrinsic.width(), h as f32 / intrinsic.height());
     resvg::render(&tree, transform, &mut pixmap.as_mut());
     let mut data = pixmap.take();
     // tiny-skia stores premultiplied RGBA.
-    for p in data.chunks_exact_mut(4) {
+    for p in data.as_chunks_mut::<4>().0 {
         let a = u32::from(p[3]);
         if a > 0 && a < 255 {
             for c in &mut p[..3] {

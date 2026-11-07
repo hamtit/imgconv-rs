@@ -1,8 +1,7 @@
 //! Format detection and header-only probing (no pixel decoding), used to
 //! enforce the pixel limit before any large allocation happens.
 
-use crate::bail;
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Format {
@@ -74,7 +73,7 @@ fn looks_like_svg(buf: &[u8]) -> bool {
 }
 
 pub fn probe(buf: &[u8]) -> Result<Info> {
-    let Some(format) = detect(buf) else { bail!("Unsupported image format") };
+    let Some(format) = detect(buf) else { return Err(Error::UnsupportedFormat) };
     let mut max_frame_pixels = 0u64;
     let (width, height, frames, orientation) = match format {
         Format::Jpeg => {
@@ -83,7 +82,7 @@ pub fn probe(buf: &[u8]) -> Result<Info> {
         }
         Format::Png => {
             if buf.len() < 24 || &buf[12..16] != b"IHDR" {
-                bail!("Invalid PNG header");
+                return Err(Error::InvalidImage("Invalid PNG header".into()));
             }
             (be32(&buf[16..]), be32(&buf[20..]), 1, 1)
         }
@@ -102,7 +101,7 @@ pub fn probe(buf: &[u8]) -> Result<Info> {
         }
     };
     if width == 0 || height == 0 {
-        bail!("Invalid image dimensions");
+        return Err(Error::InvalidImage("Invalid image dimensions".into()));
     }
     max_frame_pixels = max_frame_pixels.max(u64::from(width) * u64::from(height));
     Ok(Info { format, width, height, frames, orientation, max_frame_pixels })
@@ -124,7 +123,7 @@ pub fn probe_jpeg(buf: &[u8]) -> Result<(u32, u32, u8)> {
     let mut orientation = 1;
     while i + 4 <= buf.len() {
         if buf[i] != 0xFF {
-            bail!("Invalid JPEG marker");
+            return Err(Error::InvalidImage("Invalid JPEG marker".into()));
         }
         let marker = buf[i + 1];
         if marker == 0xFF {
@@ -146,7 +145,7 @@ pub fn probe_jpeg(buf: &[u8]) -> Result<(u32, u32, u8)> {
             }
             0xC0..=0xCF if marker != 0xC4 && marker != 0xC8 && marker != 0xCC => {
                 if seg.len() < 5 {
-                    bail!("Invalid JPEG frame header");
+                    return Err(Error::InvalidImage("Invalid JPEG frame header".into()));
                 }
                 return Ok((be16(&seg[3..]), be16(&seg[1..]), orientation));
             }
@@ -155,14 +154,14 @@ pub fn probe_jpeg(buf: &[u8]) -> Result<(u32, u32, u8)> {
         }
         i += 2 + len;
     }
-    bail!("JPEG frame header not found")
+    Err(Error::InvalidImage("JPEG frame header not found".into()))
 }
 
 /// Logical screen size, frame count and largest frame descriptor area of a
 /// GIF, by walking its block structure without decompressing image data.
 pub fn probe_gif(buf: &[u8]) -> Result<(u32, u32, u32, u64)> {
     if buf.len() < 13 {
-        bail!("Invalid GIF dimensions");
+        return Err(Error::InvalidImage("Invalid GIF dimensions".into()));
     }
     let width = le16(&buf[6..]);
     let height = le16(&buf[8..]);

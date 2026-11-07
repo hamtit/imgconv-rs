@@ -3,15 +3,16 @@ use std::ptr;
 use libwebp_sys as w;
 
 use super::Decoded;
-use crate::bail;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::image::Image;
 
 fn features(buf: &[u8]) -> Result<w::WebPBitstreamFeatures> {
+    // SAFETY: all-zero is a valid `WebPBitstreamFeatures` (a plain C struct); `WebPGetFeatures`
+    // reads `buf.len()` bytes from `buf` and writes only to `f`.
     unsafe {
         let mut f = std::mem::zeroed::<w::WebPBitstreamFeatures>();
         if w::WebPGetFeatures(buf.as_ptr(), buf.len(), &mut f) != w::VP8StatusCode::VP8_STATUS_OK {
-            bail!("Invalid WebP header");
+            return Err(Error::InvalidImage("Invalid WebP header".into()));
         }
         Ok(f)
     }
@@ -60,10 +61,14 @@ pub fn decode(buf: &[u8], shrink: u32) -> Result<Decoded> {
 fn decode_still(buf: &[u8], f: &w::WebPBitstreamFeatures, shrink: u32) -> Result<Image> {
     let channels: u8 = if f.has_alpha != 0 { 4 } else { 3 };
     let (mut width, mut height) = (f.width as u32, f.height as u32);
+    // SAFETY: `config` is zeroed (valid for this C struct) and then initialised by libwebp. `out`
+    // holds `stride * height` bytes for the (possibly scaled) output size, is registered as
+    // external memory so libwebp neither reallocates nor frees it, and outlives `WebPDecode`.
+    // `buf` is readable for `buf.len()` bytes.
     unsafe {
         let mut config = std::mem::zeroed::<w::WebPDecoderConfig>();
         if !w::WebPInitDecoderConfig(&mut config) {
-            bail!("libwebp version mismatch");
+            return Err(Error::Internal("libwebp version mismatch".into()));
         }
         if shrink > 1 {
             width = width.div_ceil(shrink);
@@ -74,31 +79,33 @@ fn decode_still(buf: &[u8], f: &w::WebPBitstreamFeatures, shrink: u32) -> Result
         }
         let stride = width as usize * channels as usize;
         let mut out = vec![0u8; stride * height as usize];
-        config.output.colorspace =
-            if channels == 4 { w::WEBP_CSP_MODE::MODE_RGBA } else { w::WEBP_CSP_MODE::MODE_RGB };
+        config.output.colorspace = if channels == 4 { w::WEBP_CSP_MODE::MODE_RGBA } else { w::WEBP_CSP_MODE::MODE_RGB };
         config.output.is_external_memory = 1;
         config.output.u.RGBA = w::WebPRGBABuffer { rgba: out.as_mut_ptr(), stride: stride as i32, size: out.len() };
         let status = w::WebPDecode(buf.as_ptr(), buf.len(), &mut config);
         w::WebPFreeDecBuffer(&mut config.output);
         if status != w::VP8StatusCode::VP8_STATUS_OK {
-            bail!("WebP decoding failed ({status:?})");
+            return Err(Error::Decode(format!("WebP decoding failed ({status:?})")));
         }
         Ok(Image::new(width, height, channels, out))
     }
 }
 
 fn first_frame(buf: &[u8]) -> Result<Image> {
+    // SAFETY: `data` borrows `buf`, which outlives the decoder (deleted before returning). `frame`
+    // points into the decoder's RGBA canvas of `canvas_width * canvas_height * 4` bytes and is
+    // copied out before `WebPAnimDecoderDelete` frees it.
     unsafe {
         let mut opts = std::mem::zeroed::<w::WebPAnimDecoderOptions>();
         if w::WebPAnimDecoderOptionsInit(&mut opts) == 0 {
-            bail!("libwebp version mismatch");
+            return Err(Error::Internal("libwebp version mismatch".into()));
         }
         opts.color_mode = w::WEBP_CSP_MODE::MODE_RGBA;
         opts.use_threads = 0;
         let data = w::WebPData { bytes: buf.as_ptr(), size: buf.len() };
         let dec = w::WebPAnimDecoderNew(&data, &opts);
         if dec.is_null() {
-            bail!("Invalid animated WebP");
+            return Err(Error::InvalidImage("Invalid animated WebP".into()));
         }
         let mut info = std::mem::zeroed::<w::WebPAnimInfo>();
         let mut frame: *mut u8 = ptr::null_mut();
@@ -110,7 +117,7 @@ fn first_frame(buf: &[u8]) -> Result<Image> {
             let rgba = std::slice::from_raw_parts(frame, len).to_vec();
             Ok(Image::new(info.canvas_width, info.canvas_height, 4, rgba))
         } else {
-            Err(crate::error::err("Animated WebP decoding failed"))
+            Err(Error::Decode("Animated WebP decoding failed".into()))
         };
         w::WebPAnimDecoderDelete(dec);
         result

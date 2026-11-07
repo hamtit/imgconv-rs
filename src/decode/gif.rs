@@ -9,7 +9,7 @@ use crate::error::{Error, Result};
 use crate::image::Image;
 
 fn gif_err(e: gif::DecodingError) -> Error {
-    Error(format!("GIF decoding failed: {e}"))
+    Error::Decode(format!("GIF decoding failed: {e}"))
 }
 
 /// Streams composited RGBA frames of a GIF.
@@ -35,7 +35,7 @@ impl<'a> GifFrames<'a> {
         let decoder = opts.read_info(Cursor::new(buf)).map_err(gif_err)?;
         let (width, height) = (u32::from(decoder.width()), u32::from(decoder.height()));
         if width == 0 || height == 0 {
-            return Err(Error("Invalid GIF dimensions".into()));
+            return Err(Error::InvalidImage("Invalid GIF dimensions".into()));
         }
         Ok(GifFrames {
             decoder,
@@ -115,6 +115,6 @@ fn clip(width: u32, height: u32, left: u16, top: u16, w: u16, h: u16) -> (usize,
 pub fn decode_first(buf: &[u8]) -> Result<Image> {
     let mut frames = GifFrames::new(buf)?;
     let (w, h) = (frames.width, frames.height);
-    let frame = frames.next_frame(true)?.ok_or_else(|| Error("GIF has no frames".into()))?;
+    let frame = frames.next_frame(true)?.ok_or_else(|| Error::InvalidImage("GIF has no frames".into()))?;
     Ok(Image::new(w, h, 4, frame.rgba.to_vec()))
 }

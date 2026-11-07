@@ -25,7 +25,7 @@ impl Image {
 
     /// Drop an alpha channel that is fully opaque, so encoders can skip it.
     pub fn drop_opaque_alpha(&mut self) {
-        if self.channels != 4 || !self.data.chunks_exact(4).all(|p| p[3] == 255) {
+        if self.channels != 4 || !self.data.as_chunks::<4>().0.iter().all(|p| p[3] == 255) {
             return;
         }
         let pixels = self.width as usize * self.height as usize;
@@ -48,7 +48,7 @@ impl Image {
             return self.data.clone();
         }
         let mut out = Vec::with_capacity(self.width as usize * self.height as usize * 4);
-        for p in self.data.chunks_exact(3) {
+        for p in self.data.as_chunks::<3>().0 {
             out.extend_from_slice(&[p[0], p[1], p[2], 255]);
         }
         out
@@ -56,6 +56,7 @@ impl Image {
 }
 
 /// Borrowed pixels in the layout of `Image`, for passing data without copying it.
+/// `data` holds `height` rows of `stride()` bytes; FFI code (libwebp) relies on that.
 #[derive(Clone, Copy, Debug)]
 pub struct ImageView<'a> {
     pub width: u32,
@@ -75,13 +76,13 @@ impl ImageView<'_> {
 
     /// True when the view has alpha and every alpha value is 255.
     pub fn is_opaque(&self) -> bool {
-        self.channels == 4 && self.data.chunks_exact(4).all(|p| p[3] == 255)
+        self.channels == 4 && self.data.as_chunks::<4>().0.iter().all(|p| p[3] == 255)
     }
 
     /// RGB copy of an RGBA view, without the alpha channel.
     pub fn to_rgb(&self) -> Image {
         let mut out = Vec::with_capacity(self.width as usize * self.height as usize * 3);
-        for p in self.data.chunks_exact(4) {
+        for p in self.data.as_chunks::<4>().0 {
             out.extend_from_slice(&p[..3]);
         }
         Image::new(self.width, self.height, 3, out)
@@ -92,7 +93,7 @@ impl ImageView<'_> {
 pub fn expand_gray(src: &[u8], has_alpha: bool) -> Vec<u8> {
     if has_alpha {
         let mut out = Vec::with_capacity(src.len() * 2);
-        for p in src.chunks_exact(2) {
+        for p in src.as_chunks::<2>().0 {
             out.extend_from_slice(&[p[0], p[0], p[0], p[1]]);
         }
         out

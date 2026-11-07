@@ -61,7 +61,14 @@ fn output_code(f: OutputFormat) -> u32 {
     }
 }
 
-fn options(format: u32, quality: f32, max_dimension: u32, effort: i32, max_pixels: f64, animated: u32) -> Option<Options> {
+fn options(
+    format: u32,
+    quality: f32,
+    max_dimension: u32,
+    effort: i32,
+    max_pixels: f64,
+    animated: u32,
+) -> Option<Options> {
     let format = match format {
         0 => OutputFormat::Webp,
         1 => OutputFormat::Avif,
@@ -107,7 +114,7 @@ fn finish(r: crate::Result<convert::Output>) -> *mut WasmResult {
             Box::into_raw(res)
         }
         Err(e) => {
-            set_error(&e.0);
+            set_error(&e.to_string());
             std::ptr::null_mut()
         }
     }
@@ -134,6 +141,7 @@ pub unsafe extern "C" fn imgconv_convert(
     let Some(opts) = options(format, quality, max_dimension, effort, max_pixels, animated) else {
         return std::ptr::null_mut();
     };
+    // SAFETY: the caller guarantees `data` points to `len` readable bytes (see `# Safety`).
     let input = unsafe { std::slice::from_raw_parts(data, len) };
     finish(convert::convert(input, &opts))
 }
@@ -158,6 +166,7 @@ pub unsafe extern "C" fn imgconv_convert_rgba(
     let Some(opts) = options(format, quality, max_dimension, effort, max_pixels, animated) else {
         return std::ptr::null_mut();
     };
+    // SAFETY: the caller guarantees `rgba` points to `len` readable bytes (see `# Safety`).
     let input = unsafe { std::slice::from_raw_parts(rgba, len) };
     finish(convert::convert_rgba(input, width, height, &opts))
 }
@@ -169,15 +178,18 @@ pub unsafe extern "C" fn imgconv_convert_rgba(
 /// `data` must point to `len` readable bytes and `out` to five writable `u32`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn imgconv_probe(data: *const u8, len: usize, out: *mut u32) -> i32 {
+    // SAFETY: the caller guarantees `data` points to `len` readable bytes (see `# Safety`).
     let input = unsafe { std::slice::from_raw_parts(data, len) };
     match probe::probe(input) {
         Ok(i) => {
             let v = [input_code(i.format), i.width, i.height, i.frames, u32::from(i.orientation)];
+            // SAFETY: the caller guarantees `out` points to five writable `u32` (see `# Safety`);
+            // `v` is a local array, so the regions cannot overlap.
             unsafe { std::ptr::copy_nonoverlapping(v.as_ptr(), out, v.len()) };
             0
         }
         Err(e) => {
-            set_error(&e.0);
+            set_error(&e.to_string());
             -1
         }
     }
@@ -190,6 +202,8 @@ pub unsafe extern "C" fn imgconv_probe(data: *const u8, len: usize, out: *mut u3
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn imgconv_result_free(result: *mut WasmResult) {
     if !result.is_null() {
+        // SAFETY: the caller guarantees `result` came from `imgconv_convert*` (a `Box` leaked by
+        // `finish`) and is not used afterwards, so it is reclaimed exactly once.
         drop(unsafe { Box::from_raw(result) });
     }
 }
