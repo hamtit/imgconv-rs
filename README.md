@@ -22,7 +22,7 @@ sharp (libvips) は汎用の画像処理ライブラリだが、Web 配信用の
 | 処理 | ライブラリ | 版 | sharp 0.35.5 との関係 |
 |---|---|---|---|
 | WebP エンコード・デコード | libwebp (`libwebp-sys`) | 1.6.0 | sharp と同じ版。libvips と同じ設定 (preset default、method 4、alpha_quality 100) にしており、同じ画素からは**同一バイト列**を出力する |
-| AVIF エンコード | [avif-mini-encoder](https://github.com/hamtit/avif-mini-encoder) (純 Rust、git タグで固定) | 0.1.1 | libaom 3.15.1 の代わり。libheif 1.23 が libaom に渡す設定 (all-intra、speed = 9 - effort、tune IQ、quality 90 未満は 4:2:0 (libvips の規則。sharp は既定で 4:4:4 に上書きしているが、ここでは合わせない)、BT.601 full range など) を参考にしている。出力は libaom と一致しない。1 タイルのみなので、幅 4096・面積 4096×2304 を超える画像はエラーになる |
+| AVIF エンコード | [avif-mini-encoder](https://github.com/hamtit/avif-mini-encoder) (純 Rust、git タグで固定) | 0.1.2 | libaom 3.15.1 の代わり。libheif 1.23 が libaom に渡す設定 (all-intra、speed = 9 - effort、tune IQ、quality 90 未満は 4:2:0 (libvips の規則。sharp は既定で 4:4:4 に上書きしているが、ここでは合わせない)、BT.601 full range など) を参考にしている。出力は libaom と一致しない。1 タイルのみなので、幅 4096・面積 4096×2304 を超える画像はエラーになる |
 | JPEG XL エンコード | [jxl-mini-encoder](https://github.com/hamtit/jxl-mini-encoder) (純 Rust、git タグで固定) | 0.4.1 | libjxl 0.12.0 の代わり。effort 7、quality → distance の変換は libjxl と同じ。libjxl との違いは [libjxl を使っていないことによる差](#libjxl-を使っていないことによる差) |
 | JPEG デコード | mozjpeg (`mozjpeg-sys` 2.2) | | sharp と同じく mozjpeg (libjpeg-turbo 系の SIMD デコーダー) |
 | PNG / GIF デコード | `png` / `gif` クレート | | Rust 実装 |

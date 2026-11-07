@@ -65,8 +65,8 @@ dependencies = [
 
 [[package]]
 name = "avif-mini-encoder"
-version = "0.1.1"
-source = "git+https://github.com/hamtit/avif-mini-encoder?tag=v0.1.1#56ef29c8a0b76dc705c9f79c367cd3bfb87851b6"
+version = "0.1.2"
+source = "git+https://github.com/hamtit/avif-mini-encoder?tag=v0.1.2#b164b1b03c5b2db106b533ced66d776ae0424ca2"
 dependencies = [
  "avif-serialize",
 ]
@@ -432,7 +432,7 @@ checksum = "65b27460c2c92b037f3f94c538ed9a3342f3fdf923606781629ccb35f82d042a"
 
 [[package]]
 name = "imgconv-rs"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "avif-mini-encoder",
  "avif-serialize",

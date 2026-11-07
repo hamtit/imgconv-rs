@@ -10,9 +10,6 @@ use crate::bail;
 use crate::error::{Error, Result};
 use crate::image::Image;
 
-/// Version of the pinned avif-mini-encoder (Cargo.toml); the crate exposes none.
-pub const ENCODER_VERSION: &str = "0.1.1";
-
 /// libheif's quality-to-quantizer table for AOM_TUNE_IQ.
 const TUNE_IQ_QUANTIZER: [u8; 101] = [
     63, 63, 63, 62, 62, 62, 61, 61, 60, 60, 59, 59, 58, 58, 57, 57, 56, 56, 55, 55, 54, 54, 53, 53, 52, 52, 51,
@@ -148,5 +145,5 @@ pub fn encode(img: Image, s: Settings) -> Result<Vec<u8>> {
 }
 
 pub fn version() -> String {
-    ENCODER_VERSION.to_string()
+    avif_mini_encoder::VERSION.to_string()
 }
