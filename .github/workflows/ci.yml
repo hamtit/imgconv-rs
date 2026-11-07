@@ -1,6 +1,6 @@
 name: CI
 
-# - pull_request / push: build + test on x64 and arm64, build the wasm module,
+# - pull_request / push: rustfmt + clippy, build + test on x64 and arm64, build the wasm module,
 #   pack the npm packages and keep them as workflow artifacts.
 # - push to main: same, and if the tag v<version> (version = Cargo.toml) does
 #   not exist yet, create it together with a GitHub release carrying
@@ -79,6 +79,22 @@ jobs:
 
   # Build in Debian bookworm (glibc 2.36), the base of
   # oven/bun:*-debian images, so the addon loads there.
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: rustfmt
+        run: cargo fmt --check
+      # The napi exports only count as used in the addon build, so the default
+      # features are checked for the library alone. src/wasm.rs is built for
+      # emscripten only and is not covered here.
+      - name: clippy
+        run: |
+          cargo clippy --locked --lib -- -D warnings
+          cargo clippy --locked --no-default-features --all-targets -- -D warnings
+
   build:
     needs: config
     strategy:
@@ -251,7 +267,7 @@ jobs:
 
   release:
     if: needs.config.outputs.release == 'true'
-    needs: [config, package]
+    needs: [config, lint, package]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
