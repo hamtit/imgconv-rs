@@ -25,16 +25,17 @@ pub fn encode(img: &Image, quality: f32, effort: u32, threads: u32) -> Result<Ve
 /// there the palette coding of the changes is exact and smaller than lossy.
 const AUTO_LOSSLESS_QUALITY: f32 = 70.0;
 
-/// Encode composited RGBA canvases as an animated JPEG XL (loops forever).
+/// Encode composited canvases as an animated JPEG XL (loops forever).
 /// `delays_cs` are GIF delays in 1/100 s, one per frame; <= 1 becomes 10 as in browsers and the WebP path.
-/// Takes the canvases by value so opaque ones can be reduced to RGB in place
-/// (no second copy of every frame).
+/// The canvases are RGB when `opaque` and RGBA otherwise, so the caller never
+/// has to hold an opaque animation at four bytes per pixel.
 ///
 /// Flat-colour animations with few changing pixels (screen recordings, simple
 /// games) are coded lossless when `quality` is at least 70, since that is both
 /// exact and smaller than lossy for them.
 pub fn encode_animation(
-    mut frames: Vec<Vec<u8>>,
+    frames: &[Vec<u8>],
+    opaque: bool,
     delays_cs: &[u32],
     width: u32,
     height: u32,
@@ -42,17 +43,6 @@ pub fn encode_animation(
     effort: u32,
     threads: u32,
 ) -> Result<Vec<u8>> {
-    let opaque = frames.iter().all(|f| f.chunks_exact(4).all(|p| p[3] == 255));
-    if opaque {
-        for f in &mut frames {
-            let n = f.len() / 4;
-            for i in 0..n {
-                f.copy_within(i * 4..i * 4 + 3, i * 3);
-            }
-            f.truncate(n * 3);
-            f.shrink_to_fit();
-        }
-    }
     let mut list = Vec::with_capacity(frames.len());
     for (data, &cs) in frames.iter().zip(delays_cs) {
         let image = if opaque {
