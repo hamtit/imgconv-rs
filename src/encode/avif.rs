@@ -6,7 +6,6 @@
 
 use avif_mini_encoder::{Chroma, ColorDesc, EncodeJob, Tune};
 
-use crate::bail;
 use crate::error::{Error, Result};
 use crate::image::Image;
 
@@ -107,7 +106,7 @@ pub fn encode(img: Image, s: Settings) -> Result<Vec<u8>> {
         speed,
     };
     let threads = s.threads.max(1) as usize;
-    let map_err = |e: avif_mini_encoder::Error| Error(format!("AV1 encoding failed: {e}"));
+    let map_err = |e: avif_mini_encoder::Error| Error::Encode(format!("AV1 encoding failed: {e}"));
     let (color, alpha) = match &alpha_plane {
         Some(a) => {
             let alpha_planes = [a.as_slice()];
@@ -140,7 +139,7 @@ pub fn encode(img: Image, s: Settings) -> Result<Vec<u8>> {
         }
     };
     if color.is_empty() {
-        bail!("AV1 encoder produced no data");
+        return Err(Error::Encode("AV1 encoder produced no data".into()));
     }
     drop((y, u, v));
     let mut avif = avif_serialize::Aviffy::new();

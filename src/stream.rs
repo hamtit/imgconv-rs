@@ -15,7 +15,7 @@
 use fast_image_resize::images::{Image as FirImage, ImageRef};
 use fast_image_resize::{FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer};
 
-use crate::error::{Result, err};
+use crate::error::{Error, Result};
 
 /// Lanczos3 support.
 const SUPPORT: f64 = 3.0;
@@ -47,7 +47,7 @@ impl StreamResizer {
     /// `src_w x src_h`, the result `dst_w x dst_h` (no upscaling).
     pub fn new(src_w: u32, src_h: u32, dst_w: u32, dst_h: u32, channels: u8) -> Result<Self> {
         if src_w == 0 || src_h == 0 || dst_w == 0 || dst_h == 0 || dst_w > src_w || dst_h > src_h {
-            return Err(err("stream resize: invalid sizes"));
+            return Err(Error::Resize("stream resize: invalid sizes".into()));
         }
         let c = channels as usize;
         let scale = f64::from(src_h) / f64::from(dst_h);
@@ -74,10 +74,10 @@ impl StreamResizer {
     pub fn push_row(&mut self, row: &[u8]) -> Result<()> {
         let rb = self.src_w as usize * self.channels;
         if row.len() != rb {
-            return Err(err("stream resize: bad row length"));
+            return Err(Error::Resize("stream resize: bad row length".into()));
         }
         if self.win_end >= self.src_h as usize {
-            return Err(err("stream resize: too many rows"));
+            return Err(Error::Resize("stream resize: too many rows".into()));
         }
         self.win.extend_from_slice(row);
         self.win_end += 1;
@@ -98,14 +98,14 @@ impl StreamResizer {
             let lo = (((f64::from(y0) + 0.5) * self.scale - self.radius).floor().max(0.0)) as usize;
             let window = &self.win[(lo - self.win_start) * rb..(hi - self.win_start) * rb];
             let src = ImageRef::new(self.src_w, (hi - lo) as u32, window, self.pixel_type)
-                .map_err(|e| err(format!("resize: {e}")))?;
+                .map_err(|e| Error::Resize(format!("resize: {e}")))?;
             let mut dst = FirImage::from_slice_u8(
                 self.dst_w,
                 y1 - y0,
                 &mut self.out[y0 as usize * orb..y1 as usize * orb],
                 self.pixel_type,
             )
-            .map_err(|e| err(format!("resize: {e}")))?;
+            .map_err(|e| Error::Resize(format!("resize: {e}")))?;
             let top = f64::from(y0) * self.scale - lo as f64;
             // Rounding can push the box a hair past the window's last row.
             let height = (f64::from(y1 - y0) * self.scale).min((hi - lo) as f64 - top);
@@ -113,7 +113,7 @@ impl StreamResizer {
                 .resize_alg(ResizeAlg::Convolution(FilterType::Lanczos3))
                 .use_alpha(self.channels == 4)
                 .crop(0.0, top, f64::from(self.src_w), height);
-            self.resizer.resize(&src, &mut dst, &opts).map_err(|e| err(format!("resize: {e}")))?;
+            self.resizer.resize(&src, &mut dst, &opts).map_err(|e| Error::Resize(format!("resize: {e}")))?;
             self.next_out = y1;
             // Rows above the next band's window are no longer needed.
             if y1 < self.dst_h {
@@ -130,7 +130,7 @@ impl StreamResizer {
     /// Finish after all `src_h` rows were pushed; returns the RGB(A) pixels.
     pub fn finish(self) -> Result<Vec<u8>> {
         if self.next_out != self.dst_h || self.win_end != self.src_h as usize {
-            return Err(err("stream resize: missing rows"));
+            return Err(Error::Resize("stream resize: missing rows".into()));
         }
         Ok(self.out)
     }

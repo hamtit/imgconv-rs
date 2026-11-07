@@ -3,19 +3,18 @@
 
 use libwebp_sys as w;
 
-use crate::bail;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::image::{Image, ImageView};
 
 fn config(quality: f32, effort: i32) -> Result<w::WebPConfig> {
     let Ok(mut config) = w::WebPConfig::new_with_preset(w::WebPPreset::WEBP_PRESET_DEFAULT, quality) else {
-        bail!("libwebp config version error");
+        return Err(Error::Internal("libwebp config version error".into()));
     };
     config.alpha_quality = 100;
     config.method = effort.clamp(0, 6);
     // SAFETY: `config` was initialised by `new_with_preset` and is a valid reference.
     if unsafe { w::WebPValidateConfig(&config) } == 0 {
-        bail!("invalid WebP configuration");
+        return Err(Error::Encode("invalid WebP configuration".into()));
     }
     Ok(config)
 }
@@ -25,7 +24,9 @@ struct Picture(w::WebPPicture);
 
 impl Picture {
     fn import(img: ImageView, use_argb: bool) -> Result<Self> {
-        let Ok(mut pic) = w::WebPPicture::new() else { bail!("libwebp picture version error") };
+        let Ok(mut pic) = w::WebPPicture::new() else {
+            return Err(Error::Internal("libwebp picture version error".into()));
+        };
         pic.width = img.width as i32;
         pic.height = img.height as i32;
         pic.use_argb = i32::from(use_argb);
@@ -43,7 +44,7 @@ impl Picture {
         };
         let pic = Picture(pic);
         if ok == 0 {
-            bail!("WebP picture import failed");
+            return Err(Error::Encode("WebP picture import failed".into()));
         }
         Ok(pic)
     }
@@ -71,7 +72,7 @@ pub fn encode(img: &Image, quality: f32, effort: i32) -> Result<Vec<u8>> {
         let out = if ok != 0 {
             Ok(std::slice::from_raw_parts(writer.mem, writer.size).to_vec())
         } else {
-            Err(crate::error::err(format!("WebP encoding failed ({:?})", pic.0.error_code)))
+            Err(Error::Encode(format!("WebP encoding failed ({:?})", pic.0.error_code)))
         };
         w::WebPMemoryWriterClear(&mut writer);
         out
@@ -94,7 +95,7 @@ impl AnimEncoder {
         unsafe {
             let mut opts = std::mem::zeroed::<w::WebPAnimEncoderOptions>();
             if w::WebPAnimEncoderOptionsInitInternal(&mut opts, w::WEBP_MUX_ABI_VERSION as i32) == 0 {
-                bail!("libwebp mux version error");
+                return Err(Error::Internal("libwebp mux version error".into()));
             }
             opts.anim_params.loop_count = 0;
             // libvips' defaults: effectively no forced keyframes.
@@ -104,7 +105,7 @@ impl AnimEncoder {
             opts.allow_mixed = 0;
             let enc = w::WebPAnimEncoderNewInternal(width as i32, height as i32, &opts, w::WEBP_MUX_ABI_VERSION as i32);
             if enc.is_null() {
-                bail!("WebPAnimEncoderNew failed");
+                return Err(Error::Encode("WebPAnimEncoderNew failed".into()));
             }
             Ok(AnimEncoder { enc, config, timestamp_ms: 0, frames: 0 })
         }
@@ -118,7 +119,7 @@ impl AnimEncoder {
         // `self.config` are valid for the call and the encoder copies the picture.
         unsafe {
             if w::WebPAnimEncoderAdd(self.enc, &mut pic.0, self.timestamp_ms, &self.config) == 0 {
-                bail!("WebP animation frame failed: {}", self.error());
+                return Err(Error::Encode(format!("WebP animation frame failed: {}", self.error())));
             }
         }
         let delay = if delay_ms <= 10 { 100 } else { delay_ms.min(i32::MAX as u32 / 2) };
@@ -141,11 +142,11 @@ impl AnimEncoder {
         // assemble, `data.bytes` points at `data.size` bytes, copied before `WebPDataClear` frees them.
         unsafe {
             if w::WebPAnimEncoderAdd(self.enc, std::ptr::null_mut(), self.timestamp_ms, std::ptr::null()) == 0 {
-                bail!("WebP animation failed: {}", self.error());
+                return Err(Error::Encode(format!("WebP animation failed: {}", self.error())));
             }
             let mut data = std::mem::zeroed::<w::WebPData>();
             if w::WebPAnimEncoderAssemble(self.enc, &mut data) == 0 {
-                bail!("WebP animation assembly failed: {}", self.error());
+                return Err(Error::Encode(format!("WebP animation assembly failed: {}", self.error())));
             }
             let out = std::slice::from_raw_parts(data.bytes, data.size).to_vec();
             w::WebPDataClear(&mut data);

@@ -2,7 +2,7 @@ use mozjpeg::{Decompress, Format, Marker};
 
 use super::Decoded;
 use crate::color;
-use crate::error::{Result, err};
+use crate::error::{Error, Result};
 use crate::image::{Image, expand_gray};
 use crate::stream::StreamResizer;
 
@@ -103,7 +103,7 @@ pub fn decode(buf: &[u8], shrink: u32, target: Option<(u32, u32)>) -> Result<Dec
         }
     };
     if image.data.len() != image.width as usize * image.height as usize * 3 {
-        return Err(err("Truncated JPEG"));
+        return Err(Error::InvalidImage("Truncated JPEG".into()));
     }
     Ok(Decoded { image, icc, orientation })
 }

@@ -3,8 +3,7 @@ use std::ptr;
 use libwebp_sys as w;
 
 use super::Decoded;
-use crate::bail;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::image::Image;
 
 fn features(buf: &[u8]) -> Result<w::WebPBitstreamFeatures> {
@@ -13,7 +12,7 @@ fn features(buf: &[u8]) -> Result<w::WebPBitstreamFeatures> {
     unsafe {
         let mut f = std::mem::zeroed::<w::WebPBitstreamFeatures>();
         if w::WebPGetFeatures(buf.as_ptr(), buf.len(), &mut f) != w::VP8StatusCode::VP8_STATUS_OK {
-            bail!("Invalid WebP header");
+            return Err(Error::InvalidImage("Invalid WebP header".into()));
         }
         Ok(f)
     }
@@ -69,7 +68,7 @@ fn decode_still(buf: &[u8], f: &w::WebPBitstreamFeatures, shrink: u32) -> Result
     unsafe {
         let mut config = std::mem::zeroed::<w::WebPDecoderConfig>();
         if !w::WebPInitDecoderConfig(&mut config) {
-            bail!("libwebp version mismatch");
+            return Err(Error::Internal("libwebp version mismatch".into()));
         }
         if shrink > 1 {
             width = width.div_ceil(shrink);
@@ -86,7 +85,7 @@ fn decode_still(buf: &[u8], f: &w::WebPBitstreamFeatures, shrink: u32) -> Result
         let status = w::WebPDecode(buf.as_ptr(), buf.len(), &mut config);
         w::WebPFreeDecBuffer(&mut config.output);
         if status != w::VP8StatusCode::VP8_STATUS_OK {
-            bail!("WebP decoding failed ({status:?})");
+            return Err(Error::Decode(format!("WebP decoding failed ({status:?})")));
         }
         Ok(Image::new(width, height, channels, out))
     }
@@ -99,14 +98,14 @@ fn first_frame(buf: &[u8]) -> Result<Image> {
     unsafe {
         let mut opts = std::mem::zeroed::<w::WebPAnimDecoderOptions>();
         if w::WebPAnimDecoderOptionsInit(&mut opts) == 0 {
-            bail!("libwebp version mismatch");
+            return Err(Error::Internal("libwebp version mismatch".into()));
         }
         opts.color_mode = w::WEBP_CSP_MODE::MODE_RGBA;
         opts.use_threads = 0;
         let data = w::WebPData { bytes: buf.as_ptr(), size: buf.len() };
         let dec = w::WebPAnimDecoderNew(&data, &opts);
         if dec.is_null() {
-            bail!("Invalid animated WebP");
+            return Err(Error::InvalidImage("Invalid animated WebP".into()));
         }
         let mut info = std::mem::zeroed::<w::WebPAnimInfo>();
         let mut frame: *mut u8 = ptr::null_mut();
@@ -118,7 +117,7 @@ fn first_frame(buf: &[u8]) -> Result<Image> {
             let rgba = std::slice::from_raw_parts(frame, len).to_vec();
             Ok(Image::new(info.canvas_width, info.canvas_height, 4, rgba))
         } else {
-            Err(crate::error::err("Animated WebP decoding failed"))
+            Err(Error::Decode("Animated WebP decoding failed".into()))
         };
         w::WebPAnimDecoderDelete(dec);
         result

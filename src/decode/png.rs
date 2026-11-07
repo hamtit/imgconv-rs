@@ -8,7 +8,7 @@ use crate::image::{Image, expand_gray};
 use crate::stream::StreamResizer;
 
 fn png_err(e: png::DecodingError) -> Error {
-    Error(format!("PNG decoding failed: {e}"))
+    Error::Decode(format!("PNG decoding failed: {e}"))
 }
 
 /// Decode the default image of a PNG (the first frame of an APNG) to 8-bit.
@@ -29,7 +29,7 @@ pub fn decode(buf: &[u8], target: Option<(u32, u32)>) -> Result<Decoded> {
         let image = decode_streamed(&mut reader, tw, th)?;
         return Ok(Decoded { image, icc, orientation: 1 });
     }
-    let size = reader.output_buffer_size().ok_or_else(|| Error("PNG too large".into()))?;
+    let size = reader.output_buffer_size().ok_or_else(|| Error::InvalidImage("PNG too large".into()))?;
     let mut data = vec![0u8; size];
     let frame = reader.next_frame(&mut data).map_err(png_err)?;
     data.truncate(frame.buffer_size());
@@ -39,7 +39,7 @@ pub fn decode(buf: &[u8], target: Option<(u32, u32)>) -> Result<Decoded> {
         ColorType::Rgba => Image::new(w, h, 4, data),
         ColorType::Grayscale => Image::new(w, h, 3, expand_gray(&data, false)),
         ColorType::GrayscaleAlpha => Image::new(w, h, 4, expand_gray(&data, true)),
-        ColorType::Indexed => return Err(Error("PNG palette was not expanded".into())),
+        ColorType::Indexed => return Err(Error::Decode("PNG palette was not expanded".into())),
     };
     Ok(Decoded { image, icc, orientation: 1 })
 }
@@ -52,13 +52,15 @@ fn decode_streamed(reader: &mut png::Reader<Cursor<&[u8]>>, tw: u32, th: u32) ->
         ColorType::Rgba => (4, false),
         ColorType::Grayscale => (3, true),
         ColorType::GrayscaleAlpha => (4, true),
-        ColorType::Indexed => return Err(Error("PNG palette was not expanded".into())),
+        ColorType::Indexed => return Err(Error::Decode("PNG palette was not expanded".into())),
     };
     let mut stream = StreamResizer::new(w, h, tw, th, channels)?;
     let mut expanded = Vec::new();
     for _ in 0..h {
-        let row =
-            reader.next_row().map_err(png_err)?.ok_or_else(|| Error("PNG decoding failed: truncated image".into()))?;
+        let row = reader
+            .next_row()
+            .map_err(png_err)?
+            .ok_or_else(|| Error::Decode("PNG decoding failed: truncated image".into()))?;
         if gray {
             expanded.clear();
             if channels == 4 {

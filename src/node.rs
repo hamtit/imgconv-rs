@@ -112,7 +112,7 @@ impl Task for ConvertTask {
             Input::Rgba(b, w, h) => convert::convert_rgba(b, *w, *h, options),
         };
         trim_when_idle();
-        r.map_err(|e| Error::new(Status::GenericFailure, e.0))
+        r.map_err(|e| Error::new(Status::GenericFailure, e.to_string()))
     }
 
     fn resolve(&mut self, _env: Env, out: Self::Output) -> Result<Self::JsValue> {
@@ -150,7 +150,7 @@ pub fn convert_rgba(
 /// Read format, size and frame count from the header without decoding pixels.
 #[napi]
 pub fn probe(input: Buffer) -> Result<ImageInfo> {
-    probe_mod::probe(&input).map(|i| info(&i)).map_err(|e| Error::new(Status::GenericFailure, e.0))
+    probe_mod::probe(&input).map(|i| info(&i)).map_err(|e| Error::new(Status::GenericFailure, e.to_string()))
 }
 
 #[napi(object)]

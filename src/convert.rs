@@ -4,10 +4,10 @@
 
 use crate::decode::{self, Decoded, gif::GifFrames, shrink_on_load};
 use crate::encode::{avif, jxl, webp};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::image::{Image, ImageView};
 use crate::probe::{self, Format, Info};
-use crate::{bail, color, orient, resize};
+use crate::{color, orient, resize};
 
 /// sharp's default `limitInputPixels` (0x3FFF * 0x3FFF).
 pub const DEFAULT_MAX_PIXELS: u64 = 268_402_689;
@@ -90,7 +90,7 @@ pub struct Output {
 fn check_pixels(width: u32, height: u32, frames: u32, max: u64) -> Result<()> {
     let pixels = u64::from(width) * u64::from(height) * u64::from(frames.max(1));
     if pixels > max {
-        bail!("Image exceeds pixel limit: {pixels} pixels");
+        return Err(Error::PixelLimit { pixels });
     }
     Ok(())
 }
@@ -210,7 +210,7 @@ fn guard<T>(f: impl FnOnce() -> Result<T>) -> Result<T> {
                 .cloned()
                 .or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string()))
                 .unwrap_or_else(|| "decoder panicked".into());
-            Err(crate::error::Error(msg))
+            Err(Error::Internal(msg))
         }
     }
 }
@@ -221,7 +221,7 @@ pub fn convert(buf: &[u8], opts: &Options) -> Result<Output> {
         let info = probe::probe(buf)?;
         check_pixels(info.width, info.height, 1, opts.max_pixels)?;
         if info.max_frame_pixels > opts.max_pixels {
-            bail!("Image exceeds pixel limit: {} pixels", info.max_frame_pixels);
+            return Err(Error::PixelLimit { pixels: info.max_frame_pixels });
         }
         if info.format == Format::Gif && info.frames > 1 && opts.animated {
             check_pixels(info.width, info.height, info.frames, opts.max_pixels)?;
@@ -240,7 +240,7 @@ pub fn convert(buf: &[u8], opts: &Options) -> Result<Output> {
 /// Convert raw 8-bit RGBA pixels (e.g. a decoded ICO entry).
 pub fn convert_rgba(rgba: &[u8], width: u32, height: u32, opts: &Options) -> Result<Output> {
     if width == 0 || height == 0 || rgba.len() as u64 != u64::from(width) * u64::from(height) * 4 {
-        bail!("RGBA buffer length {} does not match {width}x{height}", rgba.len());
+        return Err(Error::BufferSize { actual: rgba.len(), width, height });
     }
     check_pixels(width, height, 1, opts.max_pixels)?;
     guard(|| {

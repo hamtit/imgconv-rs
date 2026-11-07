@@ -114,7 +114,7 @@ fn finish(r: crate::Result<convert::Output>) -> *mut WasmResult {
             Box::into_raw(res)
         }
         Err(e) => {
-            set_error(&e.0);
+            set_error(&e.to_string());
             std::ptr::null_mut()
         }
     }
@@ -189,7 +189,7 @@ pub unsafe extern "C" fn imgconv_probe(data: *const u8, len: usize, out: *mut u3
             0
         }
         Err(e) => {
-            set_error(&e.0);
+            set_error(&e.to_string());
             -1
         }
     }

@@ -12,13 +12,13 @@ pub fn encode(img: &Image, quality: f32, effort: u32, threads: u32) -> Result<Ve
     } else {
         jxl_mini_encoder::ImageRef::rgb8(img.width, img.height, &img.data)
     }
-    .map_err(|e| Error(format!("jxl: {e}")))?;
+    .map_err(|e| Error::Encode(format!("jxl: {e}")))?;
     jxl_mini_encoder::Encoder::new()
         .quality(quality.clamp(0.0, 100.0))
         .effort(effort)
         .threads(threads.max(1) as usize)
         .encode(&pixels)
-        .map_err(|e| Error(format!("jxl: {e}")))
+        .map_err(|e| Error::Encode(format!("jxl: {e}")))
 }
 
 /// Quality from which flat, sparsely changing animations are coded lossless:
@@ -51,7 +51,7 @@ pub fn encode_animation(
         } else {
             jxl_mini_encoder::ImageRef::rgba8(width, height, data)
         }
-        .map_err(|e| Error(format!("jxl: {e}")))?;
+        .map_err(|e| Error::Encode(format!("jxl: {e}")))?;
         list.push(jxl_mini_encoder::AnimationFrame { image, duration: if cs <= 1 { 10 } else { cs } });
     }
     let mut enc = jxl_mini_encoder::Encoder::new()
@@ -61,7 +61,8 @@ pub fn encode_animation(
     if quality >= AUTO_LOSSLESS_QUALITY && jxl_mini_encoder::animation_prefers_lossless(&list) {
         enc = enc.lossless();
     }
-    enc.encode_animation(&list, &jxl_mini_encoder::AnimationOptions::default()).map_err(|e| Error(format!("jxl: {e}")))
+    enc.encode_animation(&list, &jxl_mini_encoder::AnimationOptions::default())
+        .map_err(|e| Error::Encode(format!("jxl: {e}")))
 }
 
 pub fn version() -> String {
