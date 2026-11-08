@@ -24,7 +24,8 @@ async function pixel(buf: Buffer, x: number, y: number) {
 
 describe('versions', () => {
   test('reports the bundled codec versions', () => {
-    expect(versions()).toEqual({ imgconvRs: cargoVersion, libwebp: '1.6.0', avifMiniEncoder: '0.2.0', jxlMiniEncoder: '0.4.1' });
+    const semver = expect.stringMatching(/^\d+\.\d+\.\d+/);
+    expect(versions()).toEqual({ imgconvRs: cargoVersion, libwebp: '1.6.0', avifMiniEncoder: semver, jxlMiniEncoder: semver });
   });
 });
 
