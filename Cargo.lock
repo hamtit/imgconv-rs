@@ -65,8 +65,8 @@ dependencies = [
 
 [[package]]
 name = "avif-mini-encoder"
-version = "0.2.1"
-source = "git+https://github.com/hamtit/avif-mini-encoder?tag=v0.2.1#5e37f6ac702dcf4c5c628c4d0155c7476f121768"
+version = "0.2.2"
+source = "git+https://github.com/hamtit/avif-mini-encoder?tag=v0.2.2#f7c7aee196a193e36b2efcefdbdb6a7943737f05"
 dependencies = [
  "avif-serialize",
 ]
@@ -432,7 +432,7 @@ checksum = "65b27460c2c92b037f3f94c538ed9a3342f3fdf923606781629ccb35f82d042a"
 
 [[package]]
 name = "imgconv-rs"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "avif-mini-encoder",
  "avif-serialize",
@@ -554,8 +554,8 @@ dependencies = [
 
 [[package]]
 name = "jxl-mini-encoder"
-version = "0.4.3"
-source = "git+https://github.com/hamtit/jxl-mini-encoder?tag=v0.4.3#58fc85384e02d317a543b3f4b7a60f380d6d505a"
+version = "0.4.4"
+source = "git+https://github.com/hamtit/jxl-mini-encoder?tag=v0.4.4#0515bfb7261ce1dbf06fc24885ec0cfe7e2ee84b"
 
 [[package]]
 name = "jxl-modular"
