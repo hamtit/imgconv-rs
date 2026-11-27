@@ -10,9 +10,8 @@ fn config(quality: f32, effort: i32) -> Result<w::WebPConfig> {
     let Ok(mut config) = w::WebPConfig::new_with_preset(w::WebPPreset::WEBP_PRESET_DEFAULT, quality) else {
         return Err(Error::Internal("libwebp config version error".into()));
     };
-    config.alpha_quality = if quality >= 99.0 { 100 } else { (60.0 + quality * 0.4).round() as i32 };
+    config.alpha_quality = 100;
     config.method = effort.clamp(0, 6);
-    config.autofilter = 1;
     // SAFETY: `config` was initialised by `new_with_preset` and is a valid reference.
     if unsafe { w::WebPValidateConfig(&config) } == 0 {
         return Err(Error::Encode("invalid WebP configuration".into()));
