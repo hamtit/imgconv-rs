@@ -96,7 +96,23 @@ export default async function createImgconv(moduleOptions) {
       const bytes = toBytes(input, 'input');
       const out = m._malloc(5 * 4) >>> 0;
       try {
-        const rc = withBytes(bytes, (p) => m._imgconv_probe(p, bytes.length, out));
+        // GIF and animated WebP need full-buffer scanning to count all frames;
+        // for everything else try the first 64 KiB first and fall back to the full buffer.
+        const isGif = bytes.length >= 6 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46;
+        const isAnimWebp =
+          bytes.length >= 21 &&
+          bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
+          bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50 &&
+          bytes[12] === 0x56 && bytes[13] === 0x50 && bytes[14] === 0x38 && bytes[15] === 0x58 &&
+          (bytes[20] & 0x02) !== 0;
+        let rc = -1;
+        if (bytes.length > 65536 && !isGif && !isAnimWebp) {
+          const head = bytes.subarray(0, 65536);
+          rc = withBytes(head, (p) => m._imgconv_probe(p, head.length, out));
+        }
+        if (rc !== 0) {
+          rc = withBytes(bytes, (p) => m._imgconv_probe(p, bytes.length, out));
+        }
         if (rc !== 0) throw new Error(lastError());
         const v = m.HEAPU32.subarray(out >>> 2, (out >>> 2) + 5);
         return { format: INPUT[v[0]], width: v[1], height: v[2], frames: v[3], orientation: v[4] };

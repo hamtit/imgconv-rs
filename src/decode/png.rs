@@ -47,38 +47,25 @@ pub fn decode(buf: &[u8], target: Option<(u32, u32)>) -> Result<Decoded> {
 fn decode_streamed(reader: &mut png::Reader<Cursor<&[u8]>>, tw: u32, th: u32) -> Result<Image> {
     let (w, h) = reader.info().size();
     let (color, _) = reader.output_color_type();
-    let (channels, gray) = match color {
-        ColorType::Rgb => (3u8, false),
-        ColorType::Rgba => (4, false),
-        ColorType::Grayscale => (3, true),
-        ColorType::GrayscaleAlpha => (4, true),
+    let (stream_channels, out_channels) = match color {
+        ColorType::Rgb => (3u8, 3u8),
+        ColorType::Rgba => (4, 4),
+        ColorType::Grayscale => (1, 3),
+        ColorType::GrayscaleAlpha => (2, 4),
         ColorType::Indexed => return Err(Error::Decode("PNG palette was not expanded".into())),
     };
-    let mut stream = StreamResizer::new(w, h, tw, th, channels)?;
-    let mut expanded = Vec::new();
+    let mut stream = StreamResizer::new(w, h, tw, th, stream_channels)?;
     for _ in 0..h {
         let row = reader
             .next_row()
             .map_err(png_err)?
             .ok_or_else(|| Error::Decode("PNG decoding failed: truncated image".into()))?;
-        if gray {
-            expanded.clear();
-            if channels == 4 {
-                row.data()
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .for_each(|p| expanded.extend_from_slice(&[p[0], p[0], p[0], p[1]]));
-            } else {
-                row.data().iter().for_each(|&g| expanded.extend_from_slice(&[g, g, g]));
-            }
-            stream.push_row(&expanded)?;
-        } else {
-            stream.push_row(row.data())?;
-        }
+        stream.push_row(row.data())?;
     }
     // Read the rest of the stream (Adler-32, CRCs, IEND) so a damaged tail is
     // rejected exactly as it is when the image is decoded in one piece.
     reader.finish().map_err(png_err)?;
-    Ok(Image::new(tw, th, channels, stream.finish()?))
+    let data = stream.finish()?;
+    let data = if stream_channels <= 2 { expand_gray(&data, stream_channels == 2) } else { data };
+    Ok(Image::new(tw, th, out_channels, data))
 }

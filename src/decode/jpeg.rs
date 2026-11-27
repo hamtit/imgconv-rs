@@ -10,28 +10,55 @@ use crate::stream::StreamResizer;
 const CHUNK_ROWS: usize = 16;
 
 /// Read an RGB or gray JPEG scanline chunk by scanline chunk, shrinking to
-/// `target` as rows arrive. `gray` expands each chunk to RGB.
+/// `target` as rows arrive. Grayscale is resized at 1 byte/pixel and expanded
+/// to RGB once at the target size.
 fn read_streamed<R: std::io::BufRead>(
     mut d: mozjpeg::decompress::DecompressStarted<R>,
     target: (u32, u32),
     gray: bool,
 ) -> Result<Image> {
     let (w, h) = (d.width(), d.height());
-    let comps = if gray { 1 } else { 3 };
-    let mut stream = StreamResizer::new(w as u32, h as u32, target.0, target.1, 3)?;
-    let mut chunk = vec![0u8; w * comps * CHUNK_ROWS];
+    let comps: u8 = if gray { 1 } else { 3 };
+    let row_bytes = w * comps as usize;
+    let mut stream = StreamResizer::new(w as u32, h as u32, target.0, target.1, comps)?;
+    let mut chunk = vec![0u8; row_bytes * CHUNK_ROWS];
     let mut done = 0;
     while done < h {
         let n = CHUNK_ROWS.min(h - done);
-        let rows = d.read_scanlines_into(&mut chunk[..w * comps * n])?;
-        if gray {
-            for row in rows.chunks_exact(w) {
-                stream.push_row(&expand_gray(row, false))?;
-            }
-        } else {
-            for row in rows.chunks_exact(w * 3) {
-                stream.push_row(row)?;
-            }
+        let rows = d.read_scanlines_into(&mut chunk[..row_bytes * n])?;
+        for row in rows.chunks_exact(row_bytes) {
+            stream.push_row(row)?;
+        }
+        done += n;
+    }
+    d.finish()?;
+    let data = stream.finish()?;
+    let data = if gray { expand_gray(&data, false) } else { data };
+    Ok(Image::new(target.0, target.1, 3, data))
+}
+
+/// Read a CMYK JPEG in chunks, converting each chunk to RGB and feeding it
+/// directly into `StreamResizer` so the full-size image never exists in memory.
+fn read_cmyk_streamed<R: std::io::BufRead>(
+    mut d: mozjpeg::decompress::DecompressStarted<R>,
+    target: (u32, u32),
+    icc: Option<&[u8]>,
+    inverted: bool,
+) -> Result<Image> {
+    let (w, h) = (d.width(), d.height());
+    let conv = color::CmykConverter::new(icc, inverted);
+    let mut stream = StreamResizer::new(w as u32, h as u32, target.0, target.1, 3)?;
+    let mut cmyk_chunk = vec![0u8; w * 4 * CHUNK_ROWS];
+    let mut rgb_chunk = vec![0u8; w * 3 * CHUNK_ROWS];
+    let mut done = 0;
+    while done < h {
+        let n = CHUNK_ROWS.min(h - done);
+        let got = d.read_scanlines_into(&mut cmyk_chunk[..w * 4 * n])?.len();
+        let got_rows = got / (w * 4);
+        let rgb_slice = &mut rgb_chunk[..got_rows * w * 3];
+        conv.convert_chunk(&mut cmyk_chunk[..got_rows * w * 4], rgb_slice);
+        for row in rgb_slice.chunks_exact(w * 3) {
+            stream.push_row(row)?;
         }
         done += n;
     }
@@ -95,10 +122,14 @@ pub fn decode(buf: &[u8], shrink: u32, target: Option<(u32, u32)>) -> Result<Dec
             Image::new(w, h, 3, expand_gray(&data, false))
         }
         Format::CMYK(mut d) => {
+            if let Some(t) = needs_stream(target, d.width(), d.height()) {
+                let image = read_cmyk_streamed(d, t, icc.as_deref(), adobe)?;
+                return Ok(Decoded { image, icc: None, orientation });
+            }
             let (w, h) = (d.width() as u32, d.height() as u32);
             let data = d.read_scanlines::<u8>()?;
             d.finish()?;
-            let img = color::cmyk_to_rgb(&data, w, h, icc.as_deref(), adobe);
+            let img = color::cmyk_to_rgb(data, w, h, icc.as_deref(), adobe);
             return Ok(Decoded { image: img, icc: None, orientation });
         }
     };

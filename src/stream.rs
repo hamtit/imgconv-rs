@@ -19,8 +19,6 @@ use crate::error::{Error, Result};
 
 /// Lanczos3 support.
 const SUPPORT: f64 = 3.0;
-/// Source rows a band of output rows spans (before the filter margin).
-const BAND_SOURCE_ROWS: f64 = 64.0;
 
 pub struct StreamResizer {
     src_w: u32,
@@ -43,26 +41,37 @@ pub struct StreamResizer {
 }
 
 impl StreamResizer {
-    /// `channels` is 3 (RGB) or 4 (RGBA, straight alpha). The source is
-    /// `src_w x src_h`, the result `dst_w x dst_h` (no upscaling).
+    /// `channels` is 1 (Gray), 2 (Gray+Alpha), 3 (RGB) or 4 (RGBA, straight alpha).
+    /// The source is `src_w x src_h`, the result `dst_w x dst_h` (no upscaling).
     pub fn new(src_w: u32, src_h: u32, dst_w: u32, dst_h: u32, channels: u8) -> Result<Self> {
         if src_w == 0 || src_h == 0 || dst_w == 0 || dst_h == 0 || dst_w > src_w || dst_h > src_h {
             return Err(Error::Resize("stream resize: invalid sizes".into()));
         }
+        let pixel_type = match channels {
+            1 => PixelType::U8,
+            2 => PixelType::U8x2,
+            3 => PixelType::U8x3,
+            4 => PixelType::U8x4,
+            _ => return Err(Error::Resize("stream resize: invalid channel count".into())),
+        };
         let c = channels as usize;
         let scale = f64::from(src_h) / f64::from(dst_h);
+        let radius = SUPPORT * scale.max(1.0);
+        let band_source_rows = 64.0_f64.max(2.0 * radius).min(256.0);
+        let band = ((band_source_rows / scale) as u32).clamp(1, 64);
+        let max_win_rows = (((f64::from(band) * scale + 2.0 * radius).ceil() as usize) + 2).min(src_h as usize);
         Ok(StreamResizer {
             src_w,
             src_h,
             dst_w,
             dst_h,
             channels: c,
-            pixel_type: if c == 4 { PixelType::U8x4 } else { PixelType::U8x3 },
+            pixel_type,
             scale,
-            radius: SUPPORT * scale.max(1.0),
-            band: ((BAND_SOURCE_ROWS / scale) as u32).clamp(1, 64),
+            radius,
+            band,
             resizer: Resizer::new(),
-            win: Vec::new(),
+            win: Vec::with_capacity(max_win_rows * src_w as usize * c),
             win_start: 0,
             win_end: 0,
             out: vec![0u8; dst_w as usize * dst_h as usize * c],
@@ -111,7 +120,7 @@ impl StreamResizer {
             let height = (f64::from(y1 - y0) * self.scale).min((hi - lo) as f64 - top);
             let opts = ResizeOptions::new()
                 .resize_alg(ResizeAlg::Convolution(FilterType::Lanczos3))
-                .use_alpha(self.channels == 4)
+                .use_alpha(self.channels == 2 || self.channels == 4)
                 .crop(0.0, top, f64::from(self.src_w), height);
             self.resizer.resize(&src, &mut dst, &opts).map_err(|e| Error::Resize(format!("resize: {e}")))?;
             self.next_out = y1;

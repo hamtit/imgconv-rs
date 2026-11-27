@@ -1,22 +1,73 @@
 //! Embedded ICC profile handling: convert to sRGB like sharp does before
 //! encoding (sharp strips the profile and outputs sRGB pixels).
 
-use moxcms::{ColorProfile, DataColorSpace, Layout, TransformOptions};
+use std::sync::{Arc, OnceLock};
+
+use moxcms::{
+    ColorProfile, DataColorSpace, Layout, ParametricCurve, ToneReprCurve, Transform8BitExecutor, TransformOptions,
+};
 
 use crate::image::Image;
 
+fn srgb_profile() -> &'static ColorProfile {
+    static SRGB: OnceLock<ColorProfile> = OnceLock::new();
+    SRGB.get_or_init(ColorProfile::new_srgb)
+}
+
+fn srgb_to_linear(x: f32) -> f32 {
+    if x <= 0.04045 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) }
+}
+
+fn eval_trc(trc: &ToneReprCurve, x: f32) -> Option<f32> {
+    match trc {
+        ToneReprCurve::Lut(lut) => {
+            if lut.is_empty() {
+                Some(x)
+            } else if lut.len() == 1 {
+                let gamma = f32::from(lut[0]) / 256.0;
+                Some(x.powf(gamma))
+            } else {
+                let pos = x * (lut.len() - 1) as f32;
+                let i0 = (pos.floor() as usize).min(lut.len() - 1);
+                let i1 = (i0 + 1).min(lut.len() - 1);
+                let frac = pos - i0 as f32;
+                Some((f32::from(lut[i0]) * (1.0 - frac) + f32::from(lut[i1]) * frac) / 65535.0)
+            }
+        }
+        ToneReprCurve::Parametric(params) => Some(ParametricCurve::new(params)?.eval(x)),
+    }
+}
+
+fn trc_is_srgb(trc: Option<&ToneReprCurve>) -> bool {
+    let Some(trc) = trc else { return false };
+    const SAMPLES: usize = 32;
+    const MAX_ERR: f32 = 1.0 / 255.0;
+    for i in 0..SAMPLES {
+        let x = i as f32 / (SAMPLES - 1) as f32;
+        let Some(y) = eval_trc(trc, x) else { return false };
+        if (y - srgb_to_linear(x)).abs() > MAX_ERR {
+            return false;
+        }
+    }
+    true
+}
+
 /// True when the profile is (close enough to) sRGB, so no transform is needed.
 fn is_srgb_like(profile: &ColorProfile) -> bool {
-    let srgb = ColorProfile::new_srgb();
+    let srgb = srgb_profile();
     let close = |a: moxcms::Xyzd, b: moxcms::Xyzd| {
         (a.x - b.x).abs() < 0.003 && (a.y - b.y).abs() < 0.003 && (a.z - b.z).abs() < 0.003
     };
     profile.color_space == DataColorSpace::Rgb
+        && profile.lut_a_to_b_perceptual.is_none()
+        && profile.lut_a_to_b_colorimetric.is_none()
+        && profile.lut_a_to_b_saturation.is_none()
         && close(profile.red_colorant, srgb.red_colorant)
         && close(profile.green_colorant, srgb.green_colorant)
         && close(profile.blue_colorant, srgb.blue_colorant)
-        && profile.red_trc.is_some()
-        && format!("{:?}", profile.red_trc) == format!("{:?}", srgb.red_trc)
+        && trc_is_srgb(profile.red_trc.as_ref())
+        && trc_is_srgb(profile.green_trc.as_ref())
+        && trc_is_srgb(profile.blue_trc.as_ref())
 }
 
 /// Transform RGB(A) pixels from the embedded profile to sRGB in place.
@@ -60,8 +111,8 @@ fn apply_profile(img: &mut Image, profile: &ColorProfile) {
         return;
     }
     let layout = if img.has_alpha() { Layout::Rgba } else { Layout::Rgb };
-    let dst = ColorProfile::new_srgb();
-    let Ok(transform) = profile.create_transform_8bit(layout, &dst, layout, TransformOptions::default()) else {
+    let Ok(transform) = profile.create_transform_8bit(layout, srgb_profile(), layout, TransformOptions::default())
+    else {
         return;
     };
     transform_rows_in_place(img, |s, d| transform.transform(s, d).is_ok());
@@ -89,7 +140,7 @@ fn gray_to_srgb(img: &mut Image, profile: &ColorProfile) {
     let (src_layout, dst_layout) =
         if img.has_alpha() { (Layout::GrayAlpha, Layout::Rgba) } else { (Layout::Gray, Layout::Rgb) };
     let Ok(transform) =
-        profile.create_transform_8bit(src_layout, &ColorProfile::new_srgb(), dst_layout, TransformOptions::default())
+        profile.create_transform_8bit(src_layout, srgb_profile(), dst_layout, TransformOptions::default())
     else {
         return;
     };
@@ -113,42 +164,53 @@ fn gray_to_srgb(img: &mut Image, profile: &ColorProfile) {
     }
 }
 
+/// Reusable CMYK-to-sRGB converter for row-streaming CMYK JPEGs.
+pub struct CmykConverter {
+    transform: Option<Arc<Transform8BitExecutor>>,
+    inverted: bool,
+}
+
+impl CmykConverter {
+    pub fn new(icc: Option<&[u8]>, inverted: bool) -> Self {
+        let transform = icc
+            .and_then(|b| ColorProfile::new_from_slice(b).ok())
+            .filter(|p| p.color_space == DataColorSpace::Cmyk)
+            .and_then(|p| {
+                p.create_transform_8bit(Layout::Rgba, srgb_profile(), Layout::Rgb, TransformOptions::default()).ok()
+            });
+        CmykConverter { transform, inverted }
+    }
+
+    /// Convert `cmyk` (4 bytes/pixel, inverted in place if Adobe-style) into `rgb` (3 bytes/pixel).
+    pub fn convert_chunk(&self, cmyk: &mut [u8], rgb: &mut [u8]) {
+        if self.inverted {
+            cmyk.iter_mut().for_each(|v| *v = 255 - *v);
+        }
+        if let Some(ref t) = self.transform
+            && t.transform(cmyk, rgb).is_ok()
+        {
+            return;
+        }
+        for (p, dst) in cmyk.as_chunks::<4>().0.iter().zip(rgb.as_chunks_mut::<3>().0) {
+            let k = 255 - u32::from(p[3]);
+            dst[0] = ((255 - u32::from(p[0])) * k / 255) as u8;
+            dst[1] = ((255 - u32::from(p[1])) * k / 255) as u8;
+            dst[2] = ((255 - u32::from(p[2])) * k / 255) as u8;
+        }
+    }
+}
+
 /// Convert CMYK samples (as decoded by libjpeg) to RGB. With an embedded
 /// CMYK profile the conversion goes through it; otherwise a naive formula.
 /// `inverted` is true for Adobe-style JPEGs, which store inverted values.
-pub fn cmyk_to_rgb(cmyk: &[u8], width: u32, height: u32, icc: Option<&[u8]>, inverted: bool) -> Image {
+pub fn cmyk_to_rgb(mut cmyk: Vec<u8>, width: u32, height: u32, icc: Option<&[u8]>, inverted: bool) -> Image {
     let pixels = width as usize * height as usize;
-    let mut normalized;
-    let cmyk = if inverted {
-        normalized = cmyk.to_vec();
-        normalized.iter_mut().for_each(|v| *v = 255 - *v);
-        &normalized[..]
-    } else {
-        cmyk
-    };
-    if let Some(profile) = icc.and_then(|b| ColorProfile::new_from_slice(b).ok())
-        && profile.color_space == DataColorSpace::Cmyk
-        && let Ok(t) = profile.create_transform_8bit(
-            Layout::Rgba,
-            &ColorProfile::new_srgb(),
-            Layout::Rgb,
-            TransformOptions::default(),
-        )
-    {
-        let mut out = vec![0u8; pixels * 3];
-        let row_in = width as usize * 4;
-        let row_out = width as usize * 3;
-        let ok = cmyk.chunks_exact(row_in).zip(out.chunks_exact_mut(row_out)).all(|(s, d)| t.transform(s, d).is_ok());
-        if ok {
-            return Image::new(width, height, 3, out);
-        }
-    }
-    let mut out = Vec::with_capacity(pixels * 3);
-    for p in cmyk.as_chunks::<4>().0 {
-        let k = 255 - u32::from(p[3]);
-        for &c in &p[..3] {
-            out.push(((255 - u32::from(c)) * k / 255) as u8);
-        }
+    let conv = CmykConverter::new(icc, inverted);
+    let mut out = vec![0u8; pixels * 3];
+    let row_in = width as usize * 4;
+    let row_out = width as usize * 3;
+    for (s, d) in cmyk.chunks_exact_mut(row_in).zip(out.chunks_exact_mut(row_out)) {
+        conv.convert_chunk(s, d);
     }
     Image::new(width, height, 3, out)
 }

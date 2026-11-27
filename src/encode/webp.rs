@@ -10,13 +10,29 @@ fn config(quality: f32, effort: i32) -> Result<w::WebPConfig> {
     let Ok(mut config) = w::WebPConfig::new_with_preset(w::WebPPreset::WEBP_PRESET_DEFAULT, quality) else {
         return Err(Error::Internal("libwebp config version error".into()));
     };
-    config.alpha_quality = 100;
+    config.alpha_quality = if quality >= 99.0 { 100 } else { (60.0 + quality * 0.4).round() as i32 };
     config.method = effort.clamp(0, 6);
+    config.autofilter = 1;
     // SAFETY: `config` was initialised by `new_with_preset` and is a valid reference.
     if unsafe { w::WebPValidateConfig(&config) } == 0 {
         return Err(Error::Encode("invalid WebP configuration".into()));
     }
     Ok(config)
+}
+
+/// Custom libwebp writer callback appending encoded chunks directly into a `Vec<u8>`.
+unsafe extern "C" fn vec_writer(data: *const u8, data_size: usize, picture: *const w::WebPPicture) -> std::ffi::c_int {
+    if data_size == 0 {
+        return 1;
+    }
+    // SAFETY: `picture` is the valid `WebPPicture` passed to `WebPEncode`, and `custom_ptr`
+    // points to the `Vec<u8>` owned by `encode` for the duration of the call. libwebp
+    // guarantees `data` points to `data_size` readable bytes.
+    unsafe {
+        let out = &mut *(*picture).custom_ptr.cast::<Vec<u8>>();
+        out.extend_from_slice(std::slice::from_raw_parts(data, data_size));
+    }
+    1
 }
 
 /// A WebPPicture holding imported pixels, freed on drop.
@@ -57,26 +73,17 @@ impl Drop for Picture {
     }
 }
 
-pub fn encode(img: &Image, quality: f32, effort: i32) -> Result<Vec<u8>> {
+pub fn encode(img: Image, quality: f32, effort: i32) -> Result<Vec<u8>> {
     let config = config(quality, effort)?;
     let mut pic = Picture::import(img.view(), false)?;
-    // SAFETY: `writer` is initialised by `WebPMemoryWriterInit` before use and outlives
-    // `WebPEncode`, the only user of `custom_ptr`. After a successful encode `writer.mem` points at
-    // `writer.size` initialised bytes, copied out before `WebPMemoryWriterClear` frees them.
-    unsafe {
-        let mut writer = std::mem::zeroed::<w::WebPMemoryWriter>();
-        w::WebPMemoryWriterInit(&mut writer);
-        pic.0.writer = Some(w::WebPMemoryWrite);
-        pic.0.custom_ptr = (&mut writer as *mut w::WebPMemoryWriter).cast();
-        let ok = w::WebPEncode(&config, &mut pic.0);
-        let out = if ok != 0 {
-            Ok(std::slice::from_raw_parts(writer.mem, writer.size).to_vec())
-        } else {
-            Err(Error::Encode(format!("WebP encoding failed ({:?})", pic.0.error_code)))
-        };
-        w::WebPMemoryWriterClear(&mut writer);
-        out
-    }
+    drop(img);
+    let mut out = Vec::new();
+    pic.0.writer = Some(vec_writer);
+    pic.0.custom_ptr = (&mut out as *mut Vec<u8>).cast();
+    // SAFETY: `config` and `pic.0` are valid; `out` outlives `WebPEncode`, the only user of
+    // `custom_ptr` via `vec_writer`.
+    let ok = unsafe { w::WebPEncode(&config, &mut pic.0) };
+    if ok != 0 { Ok(out) } else { Err(Error::Encode(format!("WebP encoding failed ({:?})", pic.0.error_code))) }
 }
 
 /// Incremental animated WebP encoder (WebPAnimEncoder), looping forever.
@@ -102,7 +109,7 @@ impl AnimEncoder {
             opts.kmin = i32::MAX - 1;
             opts.kmax = i32::MAX;
             opts.minimize_size = 0;
-            opts.allow_mixed = 0;
+            opts.allow_mixed = 1;
             let enc = w::WebPAnimEncoderNewInternal(width as i32, height as i32, &opts, w::WEBP_MUX_ABI_VERSION as i32);
             if enc.is_null() {
                 return Err(Error::Encode("WebPAnimEncoderNew failed".into()));

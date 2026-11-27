@@ -34,7 +34,6 @@ impl Image {
             self.data.copy_within(s..s + 3, d);
         }
         self.data.truncate(pixels * 3);
-        self.data.shrink_to_fit();
         self.channels = 3;
     }
 

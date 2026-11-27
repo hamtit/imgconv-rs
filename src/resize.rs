@@ -17,18 +17,43 @@ pub fn fit_inside(width: u32, height: u32, max: u32) -> Option<(u32, u32)> {
     Some(if w >= h { (max, ((h * m / w).round() as u32).max(1)) } else { (((w * m / h).round() as u32).max(1), max) })
 }
 
+/// Reusable Lanczos3 resizer that retains its internal scratch buffers across frames.
+pub struct ReusableResizer(Resizer);
+
+impl Default for ReusableResizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ReusableResizer {
+    pub fn new() -> Self {
+        Self(Resizer::new())
+    }
+
+    pub fn resize_into(&mut self, img: &ImageView, width: u32, height: u32, out: &mut [u8]) -> Result<()> {
+        if img.width == width && img.height == height {
+            out.copy_from_slice(img.data);
+            return Ok(());
+        }
+        let pixel_type = if img.channels == 4 { PixelType::U8x4 } else { PixelType::U8x3 };
+        let src = ImageRef::new(img.width, img.height, img.data, pixel_type)
+            .map_err(|e| Error::Resize(format!("resize: {e}")))?;
+        let mut dst = FirImage::from_slice_u8(width, height, out, pixel_type)
+            .map_err(|e| Error::Resize(format!("resize: {e}")))?;
+        let opts =
+            ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::Lanczos3)).use_alpha(img.channels == 4);
+        self.0.resize(&src, &mut dst, &opts).map_err(|e| Error::Resize(format!("resize: {e}")))
+    }
+}
+
 pub fn resize(img: &ImageView, width: u32, height: u32) -> Result<Image> {
     if img.width == width && img.height == height {
         return Ok(Image::new(width, height, img.channels, img.data.to_vec()));
     }
-    let pixel_type = if img.channels == 4 { PixelType::U8x4 } else { PixelType::U8x3 };
-    let src = ImageRef::new(img.width, img.height, img.data, pixel_type)
-        .map_err(|e| Error::Resize(format!("resize: {e}")))?;
-    let mut dst = FirImage::new(width, height, pixel_type);
-    let opts =
-        ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::Lanczos3)).use_alpha(img.channels == 4);
-    Resizer::new().resize(&src, &mut dst, &opts).map_err(|e| Error::Resize(format!("resize: {e}")))?;
-    Ok(Image::new(width, height, img.channels, dst.into_vec()))
+    let mut out = vec![0u8; width as usize * height as usize * img.channels as usize];
+    ReusableResizer::new().resize_into(img, width, height, &mut out)?;
+    Ok(Image::new(width, height, img.channels, out))
 }
 
 #[cfg(test)]
