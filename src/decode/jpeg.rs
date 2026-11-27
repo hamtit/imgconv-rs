@@ -26,6 +26,9 @@ fn read_streamed<R: std::io::BufRead>(
     while done < h {
         let n = CHUNK_ROWS.min(h - done);
         let rows = d.read_scanlines_into(&mut chunk[..row_bytes * n])?;
+        if rows.len() != row_bytes * n {
+            return Err(truncated());
+        }
         for row in rows.chunks_exact(row_bytes) {
             stream.push_row(row)?;
         }
@@ -53,10 +56,11 @@ fn read_cmyk_streamed<R: std::io::BufRead>(
     let mut done = 0;
     while done < h {
         let n = CHUNK_ROWS.min(h - done);
-        let got = d.read_scanlines_into(&mut cmyk_chunk[..w * 4 * n])?.len();
-        let got_rows = got / (w * 4);
-        let rgb_slice = &mut rgb_chunk[..got_rows * w * 3];
-        conv.convert_chunk(&mut cmyk_chunk[..got_rows * w * 4], rgb_slice);
+        if d.read_scanlines_into(&mut cmyk_chunk[..w * 4 * n])?.len() != w * 4 * n {
+            return Err(truncated());
+        }
+        let rgb_slice = &mut rgb_chunk[..n * w * 3];
+        conv.convert_chunk(&mut cmyk_chunk[..n * w * 4], rgb_slice);
         for row in rgb_slice.chunks_exact(w * 3) {
             stream.push_row(row)?;
         }
@@ -64,6 +68,10 @@ fn read_cmyk_streamed<R: std::io::BufRead>(
     }
     d.finish()?;
     Ok(Image::new(target.0, target.1, 3, stream.finish()?))
+}
+
+fn truncated() -> Error {
+    Error::InvalidImage("Truncated JPEG".into())
 }
 
 /// True when the (already DCT-shrunk) `w x h` image should be shrunk further.
@@ -129,12 +137,15 @@ pub fn decode(buf: &[u8], shrink: u32, target: Option<(u32, u32)>) -> Result<Dec
             let (w, h) = (d.width() as u32, d.height() as u32);
             let data = d.read_scanlines::<u8>()?;
             d.finish()?;
+            if data.len() != w as usize * h as usize * 4 {
+                return Err(truncated());
+            }
             let img = color::cmyk_to_rgb(data, w, h, icc.as_deref(), adobe);
             return Ok(Decoded { image: img, icc: None, orientation });
         }
     };
     if image.data.len() != image.width as usize * image.height as usize * 3 {
-        return Err(Error::InvalidImage("Truncated JPEG".into()));
+        return Err(truncated());
     }
     Ok(Decoded { image, icc, orientation })
 }

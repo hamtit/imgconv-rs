@@ -60,10 +60,10 @@ impl<'a> GifFrames<'a> {
                         self.canvas[y * stride + x0 * 4..y * stride + x1 * 4].fill(0);
                     }
                 }
-                DisposalMethod::Previous => {
-                    if !self.previous.is_empty() {
-                        std::mem::swap(&mut self.canvas, &mut self.previous);
-                    }
+                // `previous` holds the snapshot taken just before the frame
+                // that requested this disposal (every Previous frame refreshes it).
+                DisposalMethod::Previous if !self.previous.is_empty() => {
+                    std::mem::swap(&mut self.canvas, &mut self.previous);
                 }
                 _ => {}
             }
@@ -133,4 +133,55 @@ pub fn decode_first(buf: &[u8]) -> Result<Image> {
         return Err(Error::InvalidImage("GIF has no frames".into()));
     }
     Ok(Image::new(w, h, 4, frames.canvas))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 4x1 GIF: a red base, then two `Previous` frames painting single pixels,
+    /// then a fully transparent frame. Each `Previous` frame must be undone
+    /// before the next one is drawn.
+    fn previous_disposal_gif() -> Vec<u8> {
+        let palette = [255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0];
+        let mut out = Vec::new();
+        {
+            let mut enc = gif::Encoder::new(&mut out, 4, 1, &palette).unwrap();
+            let mut f = gif::Frame { width: 4, height: 1, buffer: vec![0; 4].into(), ..Default::default() };
+            enc.write_frame(&f).unwrap();
+            for (x, idx) in [(1u16, 1u8), (2, 2)] {
+                f = gif::Frame {
+                    left: x,
+                    width: 1,
+                    height: 1,
+                    dispose: DisposalMethod::Previous,
+                    buffer: vec![idx].into(),
+                    ..Default::default()
+                };
+                enc.write_frame(&f).unwrap();
+            }
+            f = gif::Frame { width: 1, height: 1, transparent: Some(3), buffer: vec![3].into(), ..Default::default() };
+            enc.write_frame(&f).unwrap();
+        }
+        out
+    }
+
+    #[test]
+    fn consecutive_previous_disposals_restore_the_base() {
+        let data = previous_disposal_gif();
+        let mut frames = GifFrames::new(&data).unwrap();
+        let px = |rgba: &[u8], x: usize| [rgba[x * 4], rgba[x * 4 + 1], rgba[x * 4 + 2]];
+        let (red, green, blue) = ([255, 0, 0], [0, 255, 0], [0, 0, 255]);
+        let mut seen = Vec::new();
+        let mut first = true;
+        while let Some(f) = frames.next_frame(first).unwrap() {
+            first = false;
+            seen.push((0..4).map(|x| px(f.rgba, x)).collect::<Vec<_>>());
+        }
+        assert_eq!(seen.len(), 4);
+        assert_eq!(seen[0], [red; 4]);
+        assert_eq!(seen[1], [red, green, red, red]);
+        assert_eq!(seen[2], [red, red, blue, red]);
+        assert_eq!(seen[3], [red; 4]);
+    }
 }

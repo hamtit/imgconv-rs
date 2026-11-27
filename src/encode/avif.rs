@@ -263,3 +263,49 @@ pub fn encode(img: Image, s: Settings) -> Result<Vec<u8>> {
 pub fn version() -> String {
     avif_mini_encoder::VERSION.to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Floating-point reference: chroma is the mean over the pixels of each
+    /// 2x2 block that exist (1, 2 or 4 at odd edges).
+    fn reference_chroma(img: &Image) -> (Vec<u8>, Vec<u8>) {
+        let (w, h, c) = (img.width as usize, img.height as usize, img.channels as usize);
+        let (cw, ch) = (w.div_ceil(2), h.div_ceil(2));
+        let (mut u, mut v) = (vec![0u8; cw * ch], vec![0u8; cw * ch]);
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let (mut r, mut g, mut b, mut n) = (0.0f64, 0.0, 0.0, 0.0);
+                for yy in cy * 2..(cy * 2 + 2).min(h) {
+                    for x in cx * 2..(cx * 2 + 2).min(w) {
+                        let o = (yy * w + x) * c;
+                        r += f64::from(img.data[o]);
+                        g += f64::from(img.data[o + 1]);
+                        b += f64::from(img.data[o + 2]);
+                        n += 1.0;
+                    }
+                }
+                let (r, g, b) = (r / n, g / n, b / n);
+                let luma = 0.299 * r + 0.587 * g + 0.114 * b;
+                u[cy * cw + cx] = ((b - luma) / 1.772 + 128.0).round().clamp(0.0, 255.0) as u8;
+                v[cy * cw + cx] = ((r - luma) / 1.402 + 128.0).round().clamp(0.0, 255.0) as u8;
+            }
+        }
+        (u, v)
+    }
+
+    #[test]
+    fn subsampled_chroma_averages_existing_pixels_at_odd_edges() {
+        for (w, h, c) in [(5u32, 3u32, 3u8), (4, 5, 4), (7, 7, 3), (1, 1, 3), (3, 1, 4)] {
+            let n = (w * h) as usize * c as usize;
+            let data: Vec<u8> = (0..n).map(|i| ((i * 97 + i / 7 * 31) % 256) as u8).collect();
+            let img = Image::new(w, h, c, data);
+            let (_, u, v, _) = rgb_to_ycbcr(&img, true);
+            let (ru, rv) = reference_chroma(&img);
+            for (got, want) in u.iter().zip(&ru).chain(v.iter().zip(&rv)) {
+                assert!(got.abs_diff(*want) <= 1, "{w}x{h}x{c}: {got} vs {want}");
+            }
+        }
+    }
+}
