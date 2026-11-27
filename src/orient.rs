@@ -39,33 +39,96 @@ pub fn oriented_size(width: u32, height: u32, orientation: u8) -> (u32, u32) {
     if orientation >= 5 { (height, width) } else { (width, height) }
 }
 
+fn flip_h<const C: usize>(data: &mut [u8], w: usize) {
+    let stride = w * C;
+    for row in data.chunks_exact_mut(stride) {
+        row.as_chunks_mut::<C>().0.reverse();
+    }
+}
+
+fn rotate_180<const C: usize>(data: &mut [u8]) {
+    data.as_chunks_mut::<C>().0.reverse();
+}
+
+fn flip_v(data: &mut [u8], stride: usize, h: usize) {
+    for y in 0..h / 2 {
+        let top = y * stride;
+        let bot = (h - 1 - y) * stride;
+        let (head, tail) = data.split_at_mut(bot);
+        head[top..top + stride].swap_with_slice(&mut tail[..stride]);
+    }
+}
+
+fn transpose_blocked<const C: usize>(src: &[u8], w: usize, h: usize, orientation: u8) -> Vec<u8> {
+    const TILE: usize = 32;
+    let nw = h;
+    let mut out = vec![0u8; src.len()];
+    macro_rules! run {
+        ($dx:expr, $dy:expr) => {
+            for by in (0..h).step_by(TILE) {
+                let y_end = (by + TILE).min(h);
+                for bx in (0..w).step_by(TILE) {
+                    let x_end = (bx + TILE).min(w);
+                    for y in by..y_end {
+                        let row = &src[y * w * C..(y + 1) * w * C];
+                        for x in bx..x_end {
+                            let dx = $dx(x, y);
+                            let dy = $dy(x, y);
+                            let d = (dy * nw + dx) * C;
+                            out[d..d + C].copy_from_slice(&row[x * C..x * C + C]);
+                        }
+                    }
+                }
+            }
+        };
+    }
+    match orientation {
+        5 => run!(|_x, y| y, |x, _y| x),
+        6 => run!(|_x, y| h - 1 - y, |x, _y| x),
+        7 => run!(|_x, y| h - 1 - y, |x, _y| w - 1 - x),
+        8 => run!(|_x, y| y, |x, _y| w - 1 - x),
+        _ => unreachable!(),
+    }
+    out
+}
+
 /// Apply an EXIF orientation so the pixels are upright.
-pub fn apply(img: Image, orientation: u8) -> Image {
+pub fn apply(mut img: Image, orientation: u8) -> Image {
     if !(2..=8).contains(&orientation) {
         return img;
     }
     let (w, h, c) = (img.width as usize, img.height as usize, img.channels as usize);
-    let (nw, nh) = if orientation >= 5 { (h, w) } else { (w, h) };
-    let mut out = vec![0u8; img.data.len()];
-    for y in 0..h {
-        let row = &img.data[y * w * c..(y + 1) * w * c];
-        for x in 0..w {
-            // Destination of source pixel (x, y).
-            let (dx, dy) = match orientation {
-                2 => (w - 1 - x, y),
-                3 => (w - 1 - x, h - 1 - y),
-                4 => (x, h - 1 - y),
-                5 => (y, x),
-                6 => (h - 1 - y, x),
-                7 => (h - 1 - y, w - 1 - x),
-                8 => (y, w - 1 - x),
-                _ => unreachable!(),
-            };
-            let d = (dy * nw + dx) * c;
-            out[d..d + c].copy_from_slice(&row[x * c..x * c + c]);
+    match orientation {
+        2 => {
+            if c == 4 {
+                flip_h::<4>(&mut img.data, w);
+            } else {
+                flip_h::<3>(&mut img.data, w);
+            }
+            img
         }
+        3 => {
+            if c == 4 {
+                rotate_180::<4>(&mut img.data);
+            } else {
+                rotate_180::<3>(&mut img.data);
+            }
+            img
+        }
+        4 => {
+            flip_v(&mut img.data, w * c, h);
+            img
+        }
+        5..=8 => {
+            let out = if c == 4 {
+                transpose_blocked::<4>(&img.data, w, h, orientation)
+            } else {
+                transpose_blocked::<3>(&img.data, w, h, orientation)
+            };
+            Image::new(img.height, img.width, img.channels, out)
+        }
+        _ => unreachable!(),
     }
-    Image::new(nw as u32, nh as u32, img.channels, out)
 }
 
 #[cfg(test)]

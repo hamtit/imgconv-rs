@@ -9,7 +9,7 @@ use resvg::usvg;
 use crate::error::{Error, Result};
 use crate::image::Image;
 
-fn parse(buf: &[u8]) -> Result<usvg::Tree> {
+pub(crate) fn parse(buf: &[u8]) -> Result<usvg::Tree> {
     let options = usvg::Options {
         resources_dir: None,
         image_href_resolver: usvg::ImageHrefResolver {
@@ -21,22 +21,24 @@ fn parse(buf: &[u8]) -> Result<usvg::Tree> {
     usvg::Tree::from_data(buf, &options).map_err(|e| Error::InvalidImage(format!("Invalid SVG: {e}")))
 }
 
-/// Intrinsic size in pixels (rounded up, at least 1).
-pub fn probe(buf: &[u8]) -> Result<(u32, u32)> {
-    let size = parse(buf)?.size();
-    Ok((size.width().ceil().max(1.0) as u32, size.height().ceil().max(1.0) as u32))
+pub(crate) fn tree_size(tree: &usvg::Tree) -> (u32, u32) {
+    let size = tree.size();
+    (size.width().ceil().max(1.0) as u32, size.height().ceil().max(1.0) as u32)
 }
 
-/// Render at `size` (the intrinsic size when None). Vector input is rendered
-/// directly at the target size instead of being resized afterwards.
-pub fn decode(buf: &[u8], size: Option<(u32, u32)>) -> Result<Image> {
-    let tree = parse(buf)?;
+/// Intrinsic size in pixels (rounded up, at least 1).
+pub fn probe(buf: &[u8]) -> Result<(u32, u32)> {
+    Ok(tree_size(&parse(buf)?))
+}
+
+/// Render a parsed tree at `size` (the intrinsic size when None).
+pub(crate) fn render(tree: &usvg::Tree, size: Option<(u32, u32)>) -> Result<Image> {
     let intrinsic = tree.size();
-    let (w, h) = size.unwrap_or((intrinsic.width().ceil().max(1.0) as u32, intrinsic.height().ceil().max(1.0) as u32));
+    let (w, h) = size.unwrap_or_else(|| tree_size(tree));
     let mut pixmap =
         tiny_skia::Pixmap::new(w, h).ok_or_else(|| Error::InvalidImage("Invalid SVG dimensions".into()))?;
     let transform = tiny_skia::Transform::from_scale(w as f32 / intrinsic.width(), h as f32 / intrinsic.height());
-    resvg::render(&tree, transform, &mut pixmap.as_mut());
+    resvg::render(tree, transform, &mut pixmap.as_mut());
     let mut data = pixmap.take();
     // tiny-skia stores premultiplied RGBA.
     for p in data.as_chunks_mut::<4>().0 {
@@ -48,4 +50,11 @@ pub fn decode(buf: &[u8], size: Option<(u32, u32)>) -> Result<Image> {
         }
     }
     Ok(Image::new(w, h, 4, data))
+}
+
+/// Render at `size` (the intrinsic size when None). Vector input is rendered
+/// directly at the target size instead of being resized afterwards.
+pub fn decode(buf: &[u8], size: Option<(u32, u32)>) -> Result<Image> {
+    let tree = parse(buf)?;
+    render(&tree, size)
 }

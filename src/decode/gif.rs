@@ -16,7 +16,7 @@ fn gif_err(e: gif::DecodingError) -> Error {
 pub struct GifFrames<'a> {
     decoder: gif::Decoder<Cursor<&'a [u8]>>,
     canvas: Vec<u8>,
-    previous: Option<Vec<u8>>,
+    previous: Vec<u8>,
     pending_dispose: Option<(DisposalMethod, u16, u16, u16, u16)>,
     pub width: u32,
     pub height: u32,
@@ -40,7 +40,7 @@ impl<'a> GifFrames<'a> {
         Ok(GifFrames {
             decoder,
             canvas: vec![0u8; width as usize * height as usize * 4],
-            previous: None,
+            previous: Vec::new(),
             pending_dispose: None,
             width,
             height,
@@ -60,10 +60,10 @@ impl<'a> GifFrames<'a> {
                         self.canvas[y * stride + x0 * 4..y * stride + x1 * 4].fill(0);
                     }
                 }
-                DisposalMethod::Previous => {
-                    if let Some(prev) = self.previous.take() {
-                        self.canvas = prev;
-                    }
+                // `previous` holds the snapshot taken just before the frame
+                // that requested this disposal (every Previous frame refreshes it).
+                DisposalMethod::Previous if !self.previous.is_empty() => {
+                    std::mem::swap(&mut self.canvas, &mut self.previous);
                 }
                 _ => {}
             }
@@ -80,19 +80,33 @@ impl<'a> GifFrames<'a> {
         let (left, top, fw, fh) = (frame.left, frame.top, frame.width, frame.height);
         let dispose = frame.dispose;
         let delay_ms = u32::from(frame.delay) * 10;
+        let opaque_frame = frame.transparent.is_none();
         if dispose == DisposalMethod::Previous {
-            self.previous = Some(self.canvas.clone());
+            if self.previous.is_empty() {
+                self.previous = self.canvas.clone();
+            } else {
+                self.previous.copy_from_slice(&self.canvas);
+            }
         }
         let buffer = &frame.buffer[..];
         let (x0, y0, x1, y1) = clip(width, height, left, top, fw, fh);
         let stride = width as usize * 4;
-        for y in y0..y1 {
-            let src_row = (y - top as usize) * fw as usize * 4;
-            for x in x0..x1 {
-                let s = src_row + (x - left as usize) * 4;
-                if buffer[s + 3] != 0 {
-                    let d = y * stride + x * 4;
-                    self.canvas[d..d + 4].copy_from_slice(&buffer[s..s + 4]);
+        if opaque_frame {
+            let copy_bytes = (x1 - x0) * 4;
+            for y in y0..y1 {
+                let s = ((y - top as usize) * fw as usize + (x0 - left as usize)) * 4;
+                let d = y * stride + x0 * 4;
+                self.canvas[d..d + copy_bytes].copy_from_slice(&buffer[s..s + copy_bytes]);
+            }
+        } else {
+            for y in y0..y1 {
+                let src_row = (y - top as usize) * fw as usize * 4;
+                for x in x0..x1 {
+                    let s = src_row + (x - left as usize) * 4;
+                    if buffer[s + 3] != 0 {
+                        let d = y * stride + x * 4;
+                        self.canvas[d..d + 4].copy_from_slice(&buffer[s..s + 4]);
+                    }
                 }
             }
         }
@@ -115,6 +129,59 @@ fn clip(width: u32, height: u32, left: u16, top: u16, w: u16, h: u16) -> (usize,
 pub fn decode_first(buf: &[u8]) -> Result<Image> {
     let mut frames = GifFrames::new(buf)?;
     let (w, h) = (frames.width, frames.height);
-    let frame = frames.next_frame(true)?.ok_or_else(|| Error::InvalidImage("GIF has no frames".into()))?;
-    Ok(Image::new(w, h, 4, frame.rgba.to_vec()))
+    if frames.next_frame(true)?.is_none() {
+        return Err(Error::InvalidImage("GIF has no frames".into()));
+    }
+    Ok(Image::new(w, h, 4, frames.canvas))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 4x1 GIF: a red base, then two `Previous` frames painting single pixels,
+    /// then a fully transparent frame. Each `Previous` frame must be undone
+    /// before the next one is drawn.
+    fn previous_disposal_gif() -> Vec<u8> {
+        let palette = [255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0];
+        let mut out = Vec::new();
+        {
+            let mut enc = gif::Encoder::new(&mut out, 4, 1, &palette).unwrap();
+            let mut f = gif::Frame { width: 4, height: 1, buffer: vec![0; 4].into(), ..Default::default() };
+            enc.write_frame(&f).unwrap();
+            for (x, idx) in [(1u16, 1u8), (2, 2)] {
+                f = gif::Frame {
+                    left: x,
+                    width: 1,
+                    height: 1,
+                    dispose: DisposalMethod::Previous,
+                    buffer: vec![idx].into(),
+                    ..Default::default()
+                };
+                enc.write_frame(&f).unwrap();
+            }
+            f = gif::Frame { width: 1, height: 1, transparent: Some(3), buffer: vec![3].into(), ..Default::default() };
+            enc.write_frame(&f).unwrap();
+        }
+        out
+    }
+
+    #[test]
+    fn consecutive_previous_disposals_restore_the_base() {
+        let data = previous_disposal_gif();
+        let mut frames = GifFrames::new(&data).unwrap();
+        let px = |rgba: &[u8], x: usize| [rgba[x * 4], rgba[x * 4 + 1], rgba[x * 4 + 2]];
+        let (red, green, blue) = ([255, 0, 0], [0, 255, 0], [0, 0, 255]);
+        let mut seen = Vec::new();
+        let mut first = true;
+        while let Some(f) = frames.next_frame(first).unwrap() {
+            first = false;
+            seen.push((0..4).map(|x| px(f.rgba, x)).collect::<Vec<_>>());
+        }
+        assert_eq!(seen.len(), 4);
+        assert_eq!(seen[0], [red; 4]);
+        assert_eq!(seen[1], [red, green, red, red]);
+        assert_eq!(seen[2], [red, red, blue, red]);
+        assert_eq!(seen[3], [red; 4]);
+    }
 }

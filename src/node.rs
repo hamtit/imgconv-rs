@@ -92,7 +92,7 @@ enum Input {
 }
 
 pub struct ConvertTask {
-    input: Input,
+    input: Option<Input>,
     /// Invalid options are reported by rejecting the promise, like any other failure.
     options: Result<Options>,
 }
@@ -107,9 +107,10 @@ impl Task for ConvertTask {
             Err(e) => return Err(Error::new(e.status, e.reason.clone())),
         };
         ACTIVE.fetch_add(1, Ordering::AcqRel);
-        let r = match &self.input {
-            Input::Encoded(b) => convert::convert(b, options),
-            Input::Rgba(b, w, h) => convert::convert_rgba(b, *w, *h, options),
+        let r = match self.input.take() {
+            Some(Input::Encoded(b)) => convert::convert_owned(b, options),
+            Some(Input::Rgba(b, w, h)) => convert::convert_rgba_owned(b, w, h, options),
+            None => Err(crate::error::Error::Internal("conversion task already ran".into())),
         };
         trim_when_idle();
         r.map_err(|e| Error::new(Status::GenericFailure, e.to_string()))
@@ -131,7 +132,7 @@ impl Task for ConvertTask {
 #[napi(ts_return_type = "Promise<ConvertResult>")]
 pub fn convert(input: Buffer, options: ConvertOptions, signal: Option<AbortSignal>) -> AsyncTask<ConvertTask> {
     let options = to_options(&options);
-    AsyncTask::with_optional_signal(ConvertTask { input: Input::Encoded(input), options }, signal)
+    AsyncTask::with_optional_signal(ConvertTask { input: Some(Input::Encoded(input)), options }, signal)
 }
 
 /// Convert raw 8-bit RGBA pixels (straight alpha), e.g. a decoded ICO entry.
@@ -144,12 +145,12 @@ pub fn convert_rgba(
     signal: Option<AbortSignal>,
 ) -> AsyncTask<ConvertTask> {
     let options = to_options(&options);
-    AsyncTask::with_optional_signal(ConvertTask { input: Input::Rgba(rgba, width, height), options }, signal)
+    AsyncTask::with_optional_signal(ConvertTask { input: Some(Input::Rgba(rgba, width, height)), options }, signal)
 }
 
 /// Read format, size and frame count from the header without decoding pixels.
 #[napi]
-pub fn probe(input: Buffer) -> Result<ImageInfo> {
+pub fn probe(input: BufferSlice<'_>) -> Result<ImageInfo> {
     probe_mod::probe(&input).map(|i| info(&i)).map_err(|e| Error::new(Status::GenericFailure, e.to_string()))
 }
 

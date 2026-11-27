@@ -4,18 +4,19 @@
 # Usage: build-wasm.sh <out-dir>
 #
 # <out-dir> receives dist/imgconv.{js,wasm} (ES module, MODULARIZE) and
-# licenses/. Plain wasm32, no SIMD and no threads: the C codecs are built
-# without SIMD; avif-mini-encoder and jxl-mini-encoder are pure Rust.
+# licenses/. Built with WebAssembly SIMD128 and no threads; avif-mini-encoder
+# and jxl-mini-encoder are pure Rust.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 out="$(realpath -m "${1:?out dir}")"
 cd "$here"
 
 # One exception / setjmp model everywhere: rustc uses WebAssembly exceptions,
-# so the C and C++ code (mozjpeg, libwebp) is
-# compiled for it too. The cc crate picks these variables up.
-export CFLAGS_wasm32_unknown_emscripten="-fwasm-exceptions"
-export CXXFLAGS_wasm32_unknown_emscripten="-fwasm-exceptions"
+# so the C and C++ code (mozjpeg, libwebp) is compiled for it too, along with
+# WASM SIMD128. The cc crate picks these variables up.
+export CFLAGS_wasm32_unknown_emscripten="-fwasm-exceptions -msimd128"
+export CXXFLAGS_wasm32_unknown_emscripten="-fwasm-exceptions -msimd128"
+export RUSTFLAGS="-C target-feature=+simd128 ${RUSTFLAGS:-}"
 rm -rf "$out"
 mkdir -p "$out/dist"
 
@@ -29,13 +30,14 @@ lib="target/wasm32-unknown-emscripten/release/libimgconv_rs.a"
 
 funcs=imgconv_convert,imgconv_convert_rgba,imgconv_probe,imgconv_result_free,imgconv_last_error,imgconv_versions,malloc,free
 em++ -O3 \
+  -msimd128 \
   -sMODULARIZE=1 \
   -sEXPORT_ES6=1 \
   -sEXPORT_NAME=createImgconv \
   -sENVIRONMENT=web,worker,node \
   -sFILESYSTEM=0 \
   -sALLOW_MEMORY_GROWTH=1 \
-  -sINITIAL_MEMORY=64MB \
+  -sINITIAL_MEMORY=16MB \
   -sMAXIMUM_MEMORY=4GB \
   -sSTACK_SIZE=5MB \
   -fwasm-exceptions \

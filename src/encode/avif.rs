@@ -36,48 +36,157 @@ fn qindex(quantizer: i32) -> u8 {
     QUANTIZER_TO_QINDEX[quantizer.clamp(0, 63) as usize]
 }
 
-/// RGB(A) to full-range BT.601 YCbCr planes. 4:2:0 chroma is the average of
-/// each 2x2 block.
-fn rgb_to_ycbcr(img: &Image, subsampled: bool) -> (Vec<u8>, Vec<u8>, Vec<u8>, usize) {
+#[inline(always)]
+fn rgb_to_y(r: i32, g: i32, b: i32) -> u8 {
+    ((19595 * r + 38470 * g + 7471 * b + 32768) >> 16) as u8
+}
+
+#[inline(always)]
+fn rgb_to_cb(r: i32, g: i32, b: i32) -> u8 {
+    (((-11058 * r - 21710 * g + 32768 * b + 8_421_376) >> 16).clamp(0, 255)) as u8
+}
+
+#[inline(always)]
+fn rgb_to_cr(r: i32, g: i32, b: i32) -> u8 {
+    (((32768 * r - 27439 * g - 5329 * b + 8_421_376) >> 16).clamp(0, 255)) as u8
+}
+
+#[inline(always)]
+fn rgb4_to_cb(rs: i32, gs: i32, bs: i32) -> u8 {
+    (((-11058 * rs - 21710 * gs + 32768 * bs + 33_685_504) >> 18).clamp(0, 255)) as u8
+}
+
+#[inline(always)]
+fn rgb4_to_cr(rs: i32, gs: i32, bs: i32) -> u8 {
+    (((32768 * rs - 27439 * gs - 5329 * bs + 33_685_504) >> 18).clamp(0, 255)) as u8
+}
+
+/// 1-pass fixed-point RGB(A) to full-range BT.601 YCbCr (+ optional alpha) planes.
+/// 4:2:0 chroma is the average of each 2x2 block, processed 2 rows at a time.
+fn rgb_to_ycbcr(img: &Image, subsampled: bool) -> (Vec<u8>, Vec<u8>, Vec<u8>, Option<Vec<u8>>) {
     let (w, h, c) = (img.width as usize, img.height as usize, img.channels as usize);
     let mut y = vec![0u8; w * h];
-    let (cw, ch) = if subsampled { (w.div_ceil(2), h.div_ceil(2)) } else { (w, h) };
+    let mut alpha = img.has_alpha().then(|| vec![0u8; w * h]);
+
+    if !subsampled {
+        let mut u = vec![0u8; w * h];
+        let mut v = vec![0u8; w * h];
+        if let Some(ref mut a) = alpha {
+            for (i, p) in img.data.as_chunks::<4>().0.iter().enumerate() {
+                let (r, g, b) = (i32::from(p[0]), i32::from(p[1]), i32::from(p[2]));
+                y[i] = rgb_to_y(r, g, b);
+                u[i] = rgb_to_cb(r, g, b);
+                v[i] = rgb_to_cr(r, g, b);
+                a[i] = p[3];
+            }
+        } else {
+            for (i, p) in img.data.as_chunks::<3>().0.iter().enumerate() {
+                let (r, g, b) = (i32::from(p[0]), i32::from(p[1]), i32::from(p[2]));
+                y[i] = rgb_to_y(r, g, b);
+                u[i] = rgb_to_cb(r, g, b);
+                v[i] = rgb_to_cr(r, g, b);
+            }
+        }
+        return (y, u, v, alpha);
+    }
+
+    let (cw, ch) = (w.div_ceil(2), h.div_ceil(2));
     let mut u = vec![0u8; cw * ch];
     let mut v = vec![0u8; cw * ch];
-    let px = |x: usize, yy: usize| {
-        let o = (yy * w + x) * c;
-        (f32::from(img.data[o]), f32::from(img.data[o + 1]), f32::from(img.data[o + 2]))
-    };
-    const KR: f32 = 0.299;
-    const KB: f32 = 0.114;
-    const KG: f32 = 1.0 - KR - KB;
-    for yy in 0..h {
-        for x in 0..w {
-            let (r, g, b) = px(x, yy);
-            y[yy * w + x] = (KR * r + KG * g + KB * b).round().clamp(0.0, 255.0) as u8;
-        }
-    }
-    for cy in 0..ch {
-        for cx in 0..cw {
-            let (mut r, mut g, mut b, mut n) = (0.0, 0.0, 0.0, 0.0);
-            let (x0, y0) = if subsampled { (cx * 2, cy * 2) } else { (cx, cy) };
-            let span = if subsampled { 2 } else { 1 };
-            for yy in y0..(y0 + span).min(h) {
-                for x in x0..(x0 + span).min(w) {
-                    let p = px(x, yy);
-                    r += p.0;
-                    g += p.1;
-                    b += p.2;
-                    n += 1.0;
-                }
+    let stride = w * c;
+    let pairs_y = h / 2;
+    let pairs_x = w / 2;
+
+    for cy in 0..pairs_y {
+        let y0 = cy * 2;
+        let y1 = y0 + 1;
+        let row0 = &img.data[y0 * stride..(y0 + 1) * stride];
+        let row1 = &img.data[y1 * stride..(y1 + 1) * stride];
+        let (y_row0, y_row1) = y[y0 * w..(y1 + 1) * w].split_at_mut(w);
+        let u_row = &mut u[cy * cw..(cy + 1) * cw];
+        let v_row = &mut v[cy * cw..(cy + 1) * cw];
+        let mut a_rows = alpha.as_mut().map(|a| a[y0 * w..(y1 + 1) * w].split_at_mut(w));
+
+        for cx in 0..pairs_x {
+            let x0 = cx * 2;
+            let x1 = x0 + 1;
+            let o0 = x0 * c;
+            let o1 = x1 * c;
+            let (r00, g00, b00) = (i32::from(row0[o0]), i32::from(row0[o0 + 1]), i32::from(row0[o0 + 2]));
+            let (r01, g01, b01) = (i32::from(row0[o1]), i32::from(row0[o1 + 1]), i32::from(row0[o1 + 2]));
+            let (r10, g10, b10) = (i32::from(row1[o0]), i32::from(row1[o0 + 1]), i32::from(row1[o0 + 2]));
+            let (r11, g11, b11) = (i32::from(row1[o1]), i32::from(row1[o1 + 1]), i32::from(row1[o1 + 2]));
+            y_row0[x0] = rgb_to_y(r00, g00, b00);
+            y_row0[x1] = rgb_to_y(r01, g01, b01);
+            y_row1[x0] = rgb_to_y(r10, g10, b10);
+            y_row1[x1] = rgb_to_y(r11, g11, b11);
+            if let Some((a0, a1)) = a_rows.as_mut() {
+                a0[x0] = row0[o0 + 3];
+                a0[x1] = row0[o1 + 3];
+                a1[x0] = row1[o0 + 3];
+                a1[x1] = row1[o1 + 3];
             }
-            let (r, g, b) = (r / n, g / n, b / n);
-            let luma = KR * r + KG * g + KB * b;
-            u[cy * cw + cx] = ((b - luma) / (2.0 * (1.0 - KB)) + 128.0).round().clamp(0.0, 255.0) as u8;
-            v[cy * cw + cx] = ((r - luma) / (2.0 * (1.0 - KR)) + 128.0).round().clamp(0.0, 255.0) as u8;
+            let rs = r00 + r01 + r10 + r11;
+            let gs = g00 + g01 + g10 + g11;
+            let bs = b00 + b01 + b10 + b11;
+            u_row[cx] = rgb4_to_cb(rs, gs, bs);
+            v_row[cx] = rgb4_to_cr(rs, gs, bs);
+        }
+        if w & 1 != 0 {
+            let x0 = pairs_x * 2;
+            let o0 = x0 * c;
+            let (r00, g00, b00) = (i32::from(row0[o0]), i32::from(row0[o0 + 1]), i32::from(row0[o0 + 2]));
+            let (r10, g10, b10) = (i32::from(row1[o0]), i32::from(row1[o0 + 1]), i32::from(row1[o0 + 2]));
+            y_row0[x0] = rgb_to_y(r00, g00, b00);
+            y_row1[x0] = rgb_to_y(r10, g10, b10);
+            if let Some((a0, a1)) = a_rows.as_mut() {
+                a0[x0] = row0[o0 + 3];
+                a1[x0] = row1[o0 + 3];
+            }
+            let (rs, gs, bs) = ((r00 + r10) * 2, (g00 + g10) * 2, (b00 + b10) * 2);
+            u_row[pairs_x] = rgb4_to_cb(rs, gs, bs);
+            v_row[pairs_x] = rgb4_to_cr(rs, gs, bs);
         }
     }
-    (y, u, v, cw)
+
+    if h & 1 != 0 {
+        let y0 = pairs_y * 2;
+        let row0 = &img.data[y0 * stride..(y0 + 1) * stride];
+        let y_row0 = &mut y[y0 * w..(y0 + 1) * w];
+        let u_row = &mut u[pairs_y * cw..(pairs_y + 1) * cw];
+        let v_row = &mut v[pairs_y * cw..(pairs_y + 1) * cw];
+        let mut a_row0 = alpha.as_mut().map(|a| &mut a[y0 * w..(y0 + 1) * w]);
+        for cx in 0..pairs_x {
+            let x0 = cx * 2;
+            let x1 = x0 + 1;
+            let o0 = x0 * c;
+            let o1 = x1 * c;
+            let (r00, g00, b00) = (i32::from(row0[o0]), i32::from(row0[o0 + 1]), i32::from(row0[o0 + 2]));
+            let (r01, g01, b01) = (i32::from(row0[o1]), i32::from(row0[o1 + 1]), i32::from(row0[o1 + 2]));
+            y_row0[x0] = rgb_to_y(r00, g00, b00);
+            y_row0[x1] = rgb_to_y(r01, g01, b01);
+            if let Some(a0) = a_row0.as_mut() {
+                a0[x0] = row0[o0 + 3];
+                a0[x1] = row0[o1 + 3];
+            }
+            let (rs, gs, bs) = ((r00 + r01) * 2, (g00 + g01) * 2, (b00 + b01) * 2);
+            u_row[cx] = rgb4_to_cb(rs, gs, bs);
+            v_row[cx] = rgb4_to_cr(rs, gs, bs);
+        }
+        if w & 1 != 0 {
+            let x0 = pairs_x * 2;
+            let o0 = x0 * c;
+            let (r00, g00, b00) = (i32::from(row0[o0]), i32::from(row0[o0 + 1]), i32::from(row0[o0 + 2]));
+            y_row0[x0] = rgb_to_y(r00, g00, b00);
+            if let Some(a0) = a_row0.as_mut() {
+                a0[x0] = row0[o0 + 3];
+            }
+            u_row[pairs_x] = rgb_to_cb(r00, g00, b00);
+            v_row[pairs_x] = rgb_to_cr(r00, g00, b00);
+        }
+    }
+
+    (y, u, v, alpha)
 }
 
 pub fn encode(img: Image, s: Settings) -> Result<Vec<u8>> {
@@ -86,9 +195,7 @@ pub fn encode(img: Image, s: Settings) -> Result<Vec<u8>> {
     // encodes faster and smaller, see README.)
     let subsampled = s.quality < 90;
     let (width, height) = (img.width as usize, img.height as usize);
-    let alpha_plane: Option<Vec<u8>> =
-        img.has_alpha().then(|| img.data.as_chunks::<4>().0.iter().map(|p| p[3]).collect());
-    let (y, u, v, _) = rgb_to_ycbcr(&img, subsampled);
+    let (y, u, v, alpha_plane) = rgb_to_ycbcr(&img, subsampled);
     drop(img);
 
     let quality = s.quality.min(100) as usize;
@@ -117,6 +224,7 @@ pub fn encode(img: Image, s: Settings) -> Result<Vec<u8>> {
                 // libheif: tune PSNR with the quantizer taken linearly from quality
                 qindex: qindex(((100 - quality as i32) * 63 + 50) / 100),
                 tune: Tune::Psnr,
+                speed: (speed + 2).min(9),
                 ..color_job
             };
             let (c, a) = avif_mini_encoder::encode_av1_pair(color_job, alpha_job, threads);
@@ -141,7 +249,7 @@ pub fn encode(img: Image, s: Settings) -> Result<Vec<u8>> {
     if color.is_empty() {
         return Err(Error::Encode("AV1 encoder produced no data".into()));
     }
-    drop((y, u, v));
+    drop((y, u, v, alpha_plane));
     let mut avif = avif_serialize::Aviffy::new();
     avif.set_full_color_range(true)
         .set_matrix_coefficients(avif_serialize::constants::MatrixCoefficients::Bt601)
@@ -154,4 +262,50 @@ pub fn encode(img: Image, s: Settings) -> Result<Vec<u8>> {
 
 pub fn version() -> String {
     avif_mini_encoder::VERSION.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Floating-point reference: chroma is the mean over the pixels of each
+    /// 2x2 block that exist (1, 2 or 4 at odd edges).
+    fn reference_chroma(img: &Image) -> (Vec<u8>, Vec<u8>) {
+        let (w, h, c) = (img.width as usize, img.height as usize, img.channels as usize);
+        let (cw, ch) = (w.div_ceil(2), h.div_ceil(2));
+        let (mut u, mut v) = (vec![0u8; cw * ch], vec![0u8; cw * ch]);
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let (mut r, mut g, mut b, mut n) = (0.0f64, 0.0, 0.0, 0.0);
+                for yy in cy * 2..(cy * 2 + 2).min(h) {
+                    for x in cx * 2..(cx * 2 + 2).min(w) {
+                        let o = (yy * w + x) * c;
+                        r += f64::from(img.data[o]);
+                        g += f64::from(img.data[o + 1]);
+                        b += f64::from(img.data[o + 2]);
+                        n += 1.0;
+                    }
+                }
+                let (r, g, b) = (r / n, g / n, b / n);
+                let luma = 0.299 * r + 0.587 * g + 0.114 * b;
+                u[cy * cw + cx] = ((b - luma) / 1.772 + 128.0).round().clamp(0.0, 255.0) as u8;
+                v[cy * cw + cx] = ((r - luma) / 1.402 + 128.0).round().clamp(0.0, 255.0) as u8;
+            }
+        }
+        (u, v)
+    }
+
+    #[test]
+    fn subsampled_chroma_averages_existing_pixels_at_odd_edges() {
+        for (w, h, c) in [(5u32, 3u32, 3u8), (4, 5, 4), (7, 7, 3), (1, 1, 3), (3, 1, 4)] {
+            let n = (w * h) as usize * c as usize;
+            let data: Vec<u8> = (0..n).map(|i| ((i * 97 + i / 7 * 31) % 256) as u8).collect();
+            let img = Image::new(w, h, c, data);
+            let (_, u, v, _) = rgb_to_ycbcr(&img, true);
+            let (ru, rv) = reference_chroma(&img);
+            for (got, want) in u.iter().zip(&ru).chain(v.iter().zip(&rv)) {
+                assert!(got.abs_diff(*want) <= 1, "{w}x{h}x{c}: {got} vs {want}");
+            }
+        }
+    }
 }
